@@ -178,9 +178,16 @@ export const CertificateRenderer: React.FC<CertificateRendererProps> = ({
       }`}
       style={{
         transformOrigin: 'top center',
-        transform: scale !== 1 ? `scale(${scale})` : undefined
+        transform: scale !== 1 ? `scale(${scale})` : undefined,
+        backgroundImage: template.customBackgroundImage ? `url(${template.customBackgroundImage})` : undefined,
+        backgroundSize: template.customBackgroundImage ? 'cover' : undefined,
+        backgroundPosition: template.customBackgroundImage ? 'center' : undefined,
       }}
     >
+      {/* Optional Custom Background subtle overlay if provided */}
+      {template.customBackgroundImage && (
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-[0.5px] pointer-events-none" />
+      )}
       {/* Revocation Overlay Watermark if Revoked */}
       {isRevoked && (
         <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center bg-rose-950/20 backdrop-blur-[1px]">

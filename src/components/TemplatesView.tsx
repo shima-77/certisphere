@@ -9,7 +9,10 @@ import {
   Type, 
   Layers, 
   Sliders,
-  Filter
+  Filter,
+  Upload,
+  Image as ImageIcon,
+  Trash2
 } from 'lucide-react';
 import { CertificateTemplate, CertificateRecord, DepartmentTheme } from '../types';
 import { CertificateRenderer } from './CertificateRenderer';
@@ -214,6 +217,52 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({
                   <option value="gold-prestige">Gold Prestige Honours (Navy/Gold)</option>
                   <option value="minimalist-clean">Minimalist Clean</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Custom Background Image Upload Card */}
+            <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-xs text-indigo-950 flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Custom Certificate Background / Border</span>
+                </span>
+                {draft.customBackgroundImage && (
+                  <button
+                    type="button"
+                    onClick={() => setDraft({ ...draft, customBackgroundImage: undefined })}
+                    className="text-[10px] text-rose-600 hover:text-rose-800 flex items-center gap-1 font-semibold cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Remove</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Upload your own certificate design, college border, or background image (PNG or JPG). Text and QR will overlay seamlessly on top.
+              </p>
+
+              <div className="flex items-center gap-2 pt-1">
+                <label className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-white border border-indigo-300 hover:border-indigo-500 text-indigo-700 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{draft.customBackgroundImage ? 'Change Background Image' : 'Upload from Computer / Drive'}</span>
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          const base64 = event.target?.result as string;
+                          setDraft({ ...draft, customBackgroundImage: base64 });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </label>
               </div>
             </div>
 

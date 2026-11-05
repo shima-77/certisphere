@@ -58,6 +58,8 @@ export interface CertificateTemplate {
   showQrCode: boolean;
   showCryptographicHash: boolean;
   showWatermark: boolean;
+  customBackgroundImage?: string; // Base64 or URL of custom uploaded certificate background
+  customLogoUrl?: string; // Custom uploaded college logo
 }
 
 export interface InstitutionalEvent {

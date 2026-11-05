@@ -40,9 +40,14 @@ export const PublicVerifyView: React.FC<PublicVerifyViewProps> = ({
     }
   }, [initialCertId]);
 
+  // Clean normalizer helper
+  const cleanId = (val: string) => (val || '').trim().toLowerCase().replace(/[\s-_]/g, '');
+
   const matchedCertificate = certificates.find(
-    c => c.id.trim().toLowerCase() === queriedId.trim().toLowerCase() ||
-         c.certificateNumber.trim().toLowerCase() === queriedId.trim().toLowerCase()
+    c => cleanId(c.id) === cleanId(queriedId) ||
+         cleanId(c.certificateNumber) === cleanId(queriedId) ||
+         cleanId(c.recipientRollNo) === cleanId(queriedId) ||
+         c.recipientEmail.trim().toLowerCase() === queriedId.trim().toLowerCase()
   );
 
   const matchedTemplate = matchedCertificate 
