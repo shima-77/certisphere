@@ -232,8 +232,7 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
                     setCoordinatorName(coord.name);
                     setCoordinatorDept(coord.dept);
                     setLoginEmail(coord.email);
-                    setLoginPin('1234');
-                  }}
+                                      }}
                   className={`p-2 rounded-lg border text-left transition-all text-xs cursor-pointer ${
                     coordinatorDept === coord.dept
                       ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-semibold'
@@ -267,13 +266,13 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
                 <label className="font-semibold text-slate-700">
                   Coordinator Access PIN
                 </label>
-                <span className="text-[10px] text-slate-400">Demo PIN: 1234</span>
+                
               </div>
               <input
                 type="password"
                 value={loginPin}
                 onChange={(e) => setLoginPin(e.target.value)}
-                placeholder="Enter 4-digit PIN (1234)"
+                placeholder="Enter secure Coordinator PIN"
                 className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 text-xs"
               />
             </div>

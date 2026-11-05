@@ -102,10 +102,18 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
       onDispatchAll(event.id);
 
       if (data.hasRealSmtp) {
-        setDispatchNotice({
-          type: 'success',
-          message: `Direct Real Email Sent! Successfully delivered emails from ${senderEmail} to ${data.sentCount} PRESENT students.`
-        });
+        const failed = (data.results || []).filter((r: any) => r.status === 'FAILED');
+        if (data.sentCount > 0) {
+          setDispatchNotice({
+            type: 'success',
+            message: `Direct Real Email Sent! Successfully delivered to ${data.sentCount} recipient(s). Check your inbox (and spam/promotions folder)!`
+          });
+        } else if (failed.length > 0) {
+          setDispatchNotice({
+            type: 'error',
+            message: `Delivery Notice: ${failed[0].error || 'Resend test mode only delivers to your registered account email (shimaferheenshaik@gmail.com). Add yourself as a participant to receive the live test email!'}`
+          });
+        }
       } else {
         setDispatchNotice({
           type: 'info',
