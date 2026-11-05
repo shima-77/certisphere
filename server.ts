@@ -329,7 +329,13 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
     const pass = customSmtp?.pass || process.env.SMTP_PASS;
     const from = customSmtp?.from || process.env.SMTP_FROM || `${senderName || 'CertiSphere Registry'} <no-reply@vignan.ac.in>`;
 
+    // HTTPS API-based email providers (essential for cloud platforms like Render Free tier that block SMTP ports 587/465)
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const brevoApiKey = process.env.BREVO_API_KEY;
+
     const hasRealSmtp = Boolean(host && user && pass);
+    const hasHttpEmail = Boolean(resendApiKey || brevoApiKey);
+    const hasRealEmail = hasRealSmtp || hasHttpEmail;
 
     let transporter: Transporter | null = null;
     if (hasRealSmtp) {
@@ -419,7 +425,78 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
         </div>
       `;
 
-      if (transporter && hasRealSmtp) {
+      if (resendApiKey) {
+        try {
+          const resendRes = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${resendApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: process.env.RESEND_FROM || 'CertiSphere <onboarding@resend.dev>',
+              to: [email],
+              subject: `Official Certificate: ${eventTitle} — ${certificateId}`,
+              html: htmlBody,
+            }),
+          });
+          const resendData: any = await resendRes.json();
+          if (!resendRes.ok) {
+            throw new Error(resendData?.message || 'Resend API error');
+          }
+          dispatchResults.push({
+            email,
+            certificateId,
+            status: 'SENT',
+            messageId: resendData.id,
+          });
+        } catch (resendErr: any) {
+          console.error(`Resend API error for ${email}:`, resendErr.message);
+          dispatchResults.push({
+            email,
+            certificateId,
+            status: 'FAILED',
+            error: resendErr.message,
+          });
+        }
+      } else if (brevoApiKey) {
+        try {
+          const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+              'api-key': brevoApiKey,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sender: { 
+                name: senderName || 'CertiSphere Registry', 
+                email: process.env.BREVO_SENDER || user || 'shimaferheenshaik@gmail.com' 
+              },
+              to: [{ email, name }],
+              subject: `Official Certificate: ${eventTitle} — ${certificateId}`,
+              htmlContent: htmlBody,
+            }),
+          });
+          const brevoData: any = await brevoRes.json();
+          if (!brevoRes.ok) {
+            throw new Error(brevoData?.message || 'Brevo API error');
+          }
+          dispatchResults.push({
+            email,
+            certificateId,
+            status: 'SENT',
+            messageId: brevoData.messageId,
+          });
+        } catch (brevoErr: any) {
+          console.error(`Brevo API error for ${email}:`, brevoErr.message);
+          dispatchResults.push({
+            email,
+            certificateId,
+            status: 'FAILED',
+            error: brevoErr.message,
+          });
+        }
+      } else if (transporter && hasRealSmtp) {
         try {
           const info = await transporter.sendMail({
             from,
@@ -457,7 +534,7 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      hasRealSmtp,
+      hasRealSmtp: hasRealEmail,
       sentCount,
       total: recipients.length,
       results: dispatchResults,
