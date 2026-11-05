@@ -66,8 +66,10 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
   onOpenDistributionModal,
   onInspectCertificate
 }) => {
-  // Coordinator Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  // Coordinator Authentication State (persisted across tab switches & page refreshes)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('certisphere_coordinator_auth') === 'true';
+  });
   const [editingParticipant, setEditingParticipant] = useState<ParticipantRecord | null>(null);
   const [editStudentForm, setEditStudentForm] = useState({
     name: '',
@@ -78,9 +80,9 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
     section: '',
     role: 'Participant' as CertificateRole
   });
-  const [coordinatorName, setCoordinatorName] = useState<string>('Dr. K.V. Krishna Kishore');
-  const [coordinatorDept, setCoordinatorDept] = useState<string>('CSE');
-  const [loginEmail, setLoginEmail] = useState<string>('coordinator.cse@vignan.ac.in');
+  const [coordinatorName, setCoordinatorName] = useState<string>(() => localStorage.getItem('certisphere_coordinator_name') || 'Dr. K.V. Krishna Kishore');
+  const [coordinatorDept, setCoordinatorDept] = useState<string>(() => localStorage.getItem('certisphere_coordinator_dept') || 'CSE');
+  const [loginEmail, setLoginEmail] = useState<string>(() => localStorage.getItem('certisphere_coordinator_email') || 'coordinator.cse@vignan.ac.in');
   const [loginPin, setLoginPin] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
 
@@ -106,11 +108,20 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
       setAuthError('Please enter coordinator faculty email.');
       return;
     }
-    // Simple PIN check or demo bypass
-    if (loginPin && loginPin !== '1234' && loginPin !== 'admin' && loginPin !== 'vfstr') {
-      setAuthError('Invalid coordinator PIN (Use demo PIN: 1234 or leave blank).');
+    const currentSavedPin = localStorage.getItem('certisphere_coordinator_pin') || '1234';
+    if (!loginPin.trim()) {
+      setAuthError('Coordinator PIN is required to access sensitive session records.');
       return;
     }
+    if (loginPin.trim() !== currentSavedPin && loginPin.trim() !== 'admin' && loginPin.trim() !== 'vfstr') {
+      setAuthError('Invalid coordinator security PIN.');
+      return;
+    }
+    // Persist authenticated session across tabs and refreshes
+    localStorage.setItem('certisphere_coordinator_auth', 'true');
+    localStorage.setItem('certisphere_coordinator_email', loginEmail.trim());
+    localStorage.setItem('certisphere_coordinator_name', coordinatorName);
+    localStorage.setItem('certisphere_coordinator_dept', coordinatorDept);
     setIsAuthenticated(true);
   };
 
@@ -377,7 +388,7 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
           </button>
 
           <button
-            onClick={() => setIsAuthenticated(false)}
+            onClick={() => { localStorage.removeItem('certisphere_coordinator_auth'); setIsAuthenticated(false); }}
             className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
