@@ -1,0 +1,6 @@
+{
+  "name": "CertiSphere AI - Institutional Event & Certificate Management Agent",
+  "description": "Autonomous institutional activity management platform for bulk tamper-proof certificate generation, QR verification, participant distribution, and audit compliance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
