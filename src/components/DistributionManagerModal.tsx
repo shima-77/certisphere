@@ -52,24 +52,26 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
     setIsDispatching(true);
     setDispatchNotice(null);
 
-    // Filter ONLY students who are verified PRESENT and have an email
-    const recipientsToDispatch = presentParticipants
-      .filter(p => (p.dispatchStatus === 'UNSENT' || p.dispatchStatus === 'QUEUED') && p.email)
-      .map(p => {
-        const cert = certificates.find(c => c.id === p.certificateId);
-        return {
-          email: p.email,
-          name: p.name,
-          certificateId: p.certificateId || `CERT-${p.rollNo}`,
-          role: p.role,
-          verificationUrl: cert ? `${window.location.origin}/?verify=${cert.id}` : `${window.location.origin}/?student=${encodeURIComponent(p.email)}`
-        };
-      });
+    // Filter students who are verified PRESENT and have an email (if unsentCount > 0, pick unsent; otherwise re-send to all present)
+    const targetList = unsentCount > 0 
+      ? presentParticipants.filter(p => (p.dispatchStatus === 'UNSENT' || p.dispatchStatus === 'QUEUED') && p.email)
+      : presentParticipants.filter(p => p.email);
+
+    const recipientsToDispatch = targetList.map(p => {
+      const cert = certificates.find(c => c.id === p.certificateId);
+      return {
+        email: p.email,
+        name: p.name,
+        certificateId: p.certificateId || `CERT-${p.rollNo}`,
+        role: p.role,
+        verificationUrl: cert ? `${window.location.origin}/?verify=${cert.id}` : `${window.location.origin}/?student=${encodeURIComponent(p.email)}`
+      };
+    });
 
     if (recipientsToDispatch.length === 0) {
       setDispatchNotice({
         type: 'info',
-        message: 'No pending unsent certificates found for students marked Present. Mark attendance as Present first!'
+        message: 'No students marked Present found. Mark attendance as Present first!'
       });
       setIsDispatching(false);
       return;
@@ -253,7 +255,7 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
           <div className="lg:col-span-6 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-700">Distribution Queue</span>
-              {unsentCount > 0 && (
+              {unsentCount > 0 ? (
                 <button
                   onClick={handleBulkDispatch}
                   disabled={isDispatching}
@@ -268,6 +270,25 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
                     <>
                       <Send className="w-3.5 h-3.5" />
                       <span>Dispatch {unsentCount} Unsent Emails</span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleBulkDispatch}
+                  disabled={isDispatching}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
+                  title="Re-send email notifications to all PRESENT participants"
+                >
+                  {isDispatching ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Sending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Re-Send Real Emails ({presentParticipants.length})</span>
                     </>
                   )}
                 </button>
