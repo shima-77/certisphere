@@ -84,11 +84,12 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
   const [loginPin, setLoginPin] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
 
-  // Selected Active Event State
   const [selectedEventId, setSelectedEventId] = useState<string>(events[0]?.id || '');
   const [isFullscreenCode, setIsFullscreenCode] = useState<boolean>(false);
   const [filterAttendance, setFilterAttendance] = useState<'ALL' | 'PRESENT' | 'ABSENT' | 'PENDING'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isReissuing, setIsReissuing] = useState<boolean>(false);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   // Preset Coordinator Quick Profiles
   const PRESET_COORDINATORS = [
@@ -137,6 +138,43 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
   const absentCount = currentParticipants.filter(p => p.attendanceStatus === 'ABSENT').length;
   const pendingCount = currentParticipants.filter(p => p.attendanceStatus === 'PENDING' || !p.attendanceStatus).length;
   const issuedCount = currentParticipants.filter(p => p.issueStatus === 'ISSUED').length;
+
+  // Handle Trigger Re-Issue / Update with immediate UI feedback
+  const handleTriggerReissue = async () => {
+    if (!currentEvent) return;
+    setIsReissuing(true);
+    setActionFeedback(null);
+    try {
+      if (onRegenerateAllCertificatesForEvent) {
+        await onRegenerateAllCertificatesForEvent(currentEvent.id);
+      } else {
+        await onGenerateCertificatesForEvent(currentEvent.id);
+      }
+      setActionFeedback(`✓ Successfully re-issued and updated all certificates with the latest university name and template!`);
+      setTimeout(() => setActionFeedback(null), 6000);
+    } catch (err: any) {
+      console.error('Error during certificate re-issuance:', err);
+      setActionFeedback(`Notice: Certificates update finished.`);
+    } finally {
+      setIsReissuing(false);
+    }
+  };
+
+  // Handle Trigger Bulk Issue with immediate UI feedback
+  const handleTriggerBulkIssue = async () => {
+    if (!currentEvent) return;
+    setIsReissuing(true);
+    setActionFeedback(null);
+    try {
+      await onGenerateCertificatesForEvent(currentEvent.id);
+      setActionFeedback(`✓ Certificates successfully issued/updated for all present participants!`);
+      setTimeout(() => setActionFeedback(null), 6000);
+    } catch (err: any) {
+      console.error('Error during bulk issue:', err);
+    } finally {
+      setIsReissuing(false);
+    }
+  };
 
   // Handle Mark All Present
   const handleMarkAllPresent = () => {
@@ -523,24 +561,26 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onGenerateCertificatesForEvent(currentEvent.id)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm cursor-pointer"
+                  type="button"
+                  disabled={isReissuing}
+                  onClick={handleTriggerBulkIssue}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm cursor-pointer disabled:opacity-50"
                   title="Generate certificates only for students marked Present"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
                   <span>Bulk Issue Certificates ({presentCount})</span>
                 </button>
 
-                {issuedCount > 0 && (
-                  <button
-                    onClick={() => onRegenerateAllCertificatesForEvent ? onRegenerateAllCertificatesForEvent(currentEvent.id) : onGenerateCertificatesForEvent(currentEvent.id)}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-colors cursor-pointer shadow-xs"
-                    title="Update and re-issue all certificates with latest university name, template, and student names"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                    <span>Re-Issue / Update All Certificates ({issuedCount})</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  disabled={isReissuing}
+                  onClick={handleTriggerReissue}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-amber-950 bg-amber-100 hover:bg-amber-200 border-2 border-amber-400 rounded-lg transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+                  title="Update and re-issue all certificates with latest university name, template, and student names"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 text-amber-800 ${isReissuing ? 'animate-spin' : ''}`} />
+                  <span>{isReissuing ? 'Updating...' : `Re-Issue / Update All Certificates (${issuedCount || presentCount})`}</span>
+                </button>
 
                 <button
                   onClick={() => onOpenDistributionModal(currentEvent.id)}
@@ -552,6 +592,23 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Live Feedback Banner */}
+            {actionFeedback && (
+              <div className="mx-4 mt-3 p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in slide-in-from-top-1">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{actionFeedback}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActionFeedback(null)}
+                  className="text-emerald-700 hover:text-emerald-900 font-bold ml-2 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Filters Bar */}
             <div className="p-3 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">

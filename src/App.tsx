@@ -332,7 +332,11 @@ export default function App() {
       p.attendanceStatus !== 'ABSENT'
     );
     
-    if (pendingParticipants.length === 0) return;
+    if (pendingParticipants.length === 0) {
+      // If certificates have already been issued, automatically update and re-issue them with latest template
+      await handleRegenerateAllCertificatesForEvent(eventId);
+      return;
+    }
 
     const newCerts: CertificateRecord[] = [];
     const updatedParticipantsMap = new Map<string, string>(); // partId -> certId
