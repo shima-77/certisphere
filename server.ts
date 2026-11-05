@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import nodemailer, { Transporter } from 'nodemailer';
+import PDFDocument from 'pdfkit';
 
 dotenv.config();
 
@@ -308,6 +309,187 @@ Keep answers authoritative, precise, concise, and academically professional.`;
 });
 
 // API: Real Email Dispatcher for Certificates
+function generatePdfCertificateBuffer({
+  name,
+  eventTitle,
+  role,
+  certificateId,
+  orgName
+}: {
+  name: string;
+  eventTitle: string;
+  role?: string;
+  certificateId: string;
+  orgName: string;
+}): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: 'A4',
+        layout: 'landscape',
+        margins: { top: 30, bottom: 30, left: 30, right: 30 }
+      });
+
+      const buffers: Buffer[] = [];
+      doc.on('data', buffers.push.bind(buffers));
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+
+      const width = doc.page.width;
+      const height = doc.page.height;
+
+      // Outer Navy Border
+      doc.rect(20, 20, width - 40, height - 40)
+         .lineWidth(4)
+         .stroke('#1e3a8a');
+
+      // Inner Gold Border
+      doc.rect(28, 28, width - 56, height - 56)
+         .lineWidth(1.5)
+         .stroke('#b45309');
+
+      // Header Institution
+      doc.moveDown(1.5);
+      doc.font('Helvetica-Bold')
+         .fontSize(16)
+         .fillColor('#1e3a8a')
+         .text(orgName || "VIGNAN'S FOUNDATION FOR SCIENCE, TECHNOLOGY & RESEARCH", {
+           align: 'center',
+           characterSpacing: 1.5
+         });
+
+      doc.font('Helvetica')
+         .fontSize(9)
+         .fillColor('#64748b')
+         .text('(Deemed to be University) · Accredited NAAC A+ · Established u/s 3 of UGC Act 1956', {
+           align: 'center'
+         });
+
+      doc.moveDown(1.2);
+
+      const isMerit = Boolean(role && (
+        role.includes('Winner') || 
+        role.includes('Merit') || 
+        role.includes('1st') || 
+        role.includes('2nd') || 
+        role.includes('3rd') || 
+        role.includes('Place')
+      ));
+      const certTitle = isMerit ? 'CERTIFICATE OF MERIT' : 'CERTIFICATE OF PARTICIPATION';
+
+      doc.font('Helvetica-Bold')
+         .fontSize(11)
+         .fillColor('#b45309')
+         .text('OFFICIAL ACADEMIC CREDENTIAL', {
+           align: 'center',
+           characterSpacing: 2
+         });
+
+      doc.moveDown(0.2);
+      doc.font('Helvetica-Bold')
+         .fontSize(24)
+         .fillColor('#0f172a')
+         .text(certTitle, {
+           align: 'center',
+           characterSpacing: 1
+         });
+
+      doc.moveDown(0.6);
+      doc.font('Helvetica-Oblique')
+         .fontSize(12)
+         .fillColor('#475569')
+         .text('This is proudly conferred to', { align: 'center' });
+
+      // Student Name
+      doc.moveDown(0.4);
+      doc.font('Helvetica-Bold')
+         .fontSize(26)
+         .fillColor('#1e3a8a')
+         .text(name, { align: 'center' });
+
+      // Decorative underline
+      const nameWidth = doc.widthOfString(name);
+      const nameX = (width - nameWidth) / 2;
+      const currentY = doc.y;
+      doc.moveTo(nameX - 20, currentY + 3)
+         .lineTo(nameX + nameWidth + 20, currentY + 3)
+         .lineWidth(1.5)
+         .stroke('#b45309');
+
+      // Citation Body
+      doc.moveDown(1.0);
+      const citation = isMerit
+        ? `in recognition of exemplary performance, superior technical innovation, and securing ${role} in the event "${eventTitle}".`
+        : `for active participation, commendable dedication, and successful completion of all technical sessions in the event "${eventTitle}".`;
+
+      doc.font('Helvetica')
+         .fontSize(12)
+         .fillColor('#334155')
+         .text(citation, (width - 560) / 2, doc.y, {
+           width: 560,
+           align: 'center',
+           lineGap: 4
+         });
+
+      // Signatures
+      const sigY = height - 120;
+
+      // Left Signature
+      doc.font('Helvetica-Bold')
+         .fontSize(11)
+         .fillColor('#1e3a8a')
+         .text('Dr. K.V. Krishna Kishore', 60, sigY);
+      doc.moveTo(60, sigY + 14)
+         .lineTo(210, sigY + 14)
+         .lineWidth(1)
+         .stroke('#94a3b8');
+      doc.font('Helvetica')
+         .fontSize(9)
+         .fillColor('#475569')
+         .text('Dean of Academic Affairs', 60, sigY + 18);
+
+      // Center Gold Seal text
+      doc.circle(width / 2, sigY + 15, 24)
+         .lineWidth(1.5)
+         .stroke('#b45309');
+      doc.font('Helvetica-Bold')
+         .fontSize(7)
+         .fillColor('#92400e')
+         .text('VFSTR\nVERIFIED', width / 2 - 20, sigY + 8, {
+           width: 40,
+           align: 'center'
+         });
+
+      // Right Signature
+      doc.font('Helvetica-Bold')
+         .fontSize(11)
+         .fillColor('#1e3a8a')
+         .text('Dr. D. Venkatesulu', width - 210, sigY, { align: 'right', width: 150 });
+      doc.moveTo(width - 210, sigY + 14)
+         .lineTo(width - 60, sigY + 14)
+         .lineWidth(1)
+         .stroke('#94a3b8');
+      doc.font('Helvetica')
+         .fontSize(9)
+         .fillColor('#475569')
+         .text('Head of Department', width - 210, sigY + 18, { align: 'right', width: 150 });
+
+      // Footer
+      const footerY = height - 52;
+      doc.font('Helvetica')
+         .fontSize(9)
+         .fillColor('#64748b')
+         .text(`Certificate ID: ${certificateId}   ·   Digital SHA-256 Tamper-Proof Verified`, 0, footerY, {
+           align: 'center',
+           width: width
+         });
+
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 app.post('/api/email/dispatch', async (req: Request, res: Response) => {
   try {
     const { 
@@ -353,6 +535,20 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
     const dispatchResults = [];
 
     for (const recipient of recipients) {
+      let pdfBuffer: Buffer | null = null;
+      let pdfBase64: string | null = null;
+      try {
+        pdfBuffer = await generatePdfCertificateBuffer({
+          name: recipient.name,
+          eventTitle,
+          role: recipient.role,
+          certificateId: recipient.certificateId,
+          orgName: recipient.recipientInstitution || institutionName || "Vignan's Foundation for Science, Technology & Research (VFSTR)"
+        });
+        pdfBase64 = pdfBuffer.toString('base64');
+      } catch (pdfErr) {
+        console.error('Failed to generate PDF attachment:', pdfErr);
+      }
       const { 
         email, 
         name, 
@@ -491,6 +687,12 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
               to: [email],
               subject: `Official Certificate: ${eventTitle} — ${certificateId}`,
               html: htmlBody,
+              attachments: pdfBase64 ? [
+                {
+                  filename: `${certificateId}.pdf`,
+                  content: pdfBase64
+                }
+              ] : undefined
             }),
           });
           const resendData: any = await resendRes.json();
@@ -556,6 +758,13 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
             to: email,
             subject: `Official Certificate: ${eventTitle} — ${certificateId}`,
             html: htmlBody,
+            attachments: pdfBuffer ? [
+              {
+                filename: `${certificateId}.pdf`,
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+              }
+            ] : undefined
           });
           dispatchResults.push({
             email,

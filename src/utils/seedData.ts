@@ -374,8 +374,8 @@ export const SAMPLE_VIGNAN_PRESETS = {
     {
       id: "part-003",
       eventId: "evt-mahotsav-2026",
-      name: "Tarun Kumar",
-      email: "tarun.22@vignan.ac.in",
+      name: "Shima Ferheen",
+      email: "shimaferheenshaik@gmail.com",
       rollNo: "221FA04190",
       institution: "Vignan's Foundation for Science, Technology & Research (VFSTR)",
       role: "Participant" as const,

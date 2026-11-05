@@ -38,6 +38,59 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
   
   // Custom Sender Email & Password inputs right inside the modal
   const [senderEmail, setSenderEmail] = useState<string>('shimaferheenshaik@gmail.com');
+  const [directRecipientEmail, setDirectRecipientEmail] = useState<string>('shimaferheenshaik@gmail.com');
+  const [directRecipientName, setDirectRecipientName] = useState<string>('Shima Ferheen');
+  const [directRole, setDirectRole] = useState<'Participant' | 'Winner - 1st Place'>('Participant');
+  const [isDirectSending, setIsDirectSending] = useState<boolean>(false);
+
+  const handleDirectTestDispatch = async () => {
+    if (!directRecipientEmail.trim()) return;
+    setIsDirectSending(true);
+    setDispatchNotice(null);
+
+    try {
+      const directCertId = `CERT-VFSTR-${Date.now().toString().slice(-6)}`;
+      const response = await fetch('/api/email/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipients: [
+            {
+              email: directRecipientEmail.trim(),
+              name: directRecipientName.trim() || 'Verified Student',
+              certificateId: directCertId,
+              role: directRole,
+              recipientInstitution: "Vignan's Foundation for Science, Technology & Research (VFSTR)",
+              verificationUrl: `${window.location.origin}/?verify=${directCertId}`
+            }
+          ],
+          eventTitle: event.title,
+          senderName: `${event.department} Academic Coordinator`
+        })
+      });
+
+      const data = await response.json();
+      if (data.sentCount > 0) {
+        setDispatchNotice({
+          type: 'success',
+          message: `Official ${directRole} Certificate with attached PDF successfully delivered to ${directRecipientEmail}! Check your inbox!`
+        });
+      } else {
+        const err = data.results?.[0]?.error || 'Failed to dispatch email';
+        setDispatchNotice({
+          type: 'error',
+          message: `Delivery issue: ${err}`
+        });
+      }
+    } catch (err: any) {
+      setDispatchNotice({
+        type: 'error',
+        message: `Failed to connect to email API: ${err.message}`
+      });
+    } finally {
+      setIsDirectSending(false);
+    }
+  };
   const [senderPass, setSenderPass] = useState<string>('');
   const [showSmtpSettings, setShowSmtpSettings] = useState<boolean>(false);
 
@@ -205,6 +258,71 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
             <div className="text-xs text-amber-700">Downloaded / Verified</div>
             <div className="text-xl font-bold font-mono text-amber-800 mt-0.5">{downloadedCount}</div>
           </div>
+        </div>
+
+        {/* Instant Live Email & PDF Attachment Dispatch Box */}
+        <div className="p-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50 border-2 border-indigo-300 rounded-xl space-y-3 shadow-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-bold text-indigo-950 uppercase tracking-wide">
+                Direct Live Email Dispatch (With PDF Attachment)
+              </span>
+            </div>
+            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100/90 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+              📎 Official PDF Attached
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                Recipient Email:
+              </label>
+              <input
+                type="email"
+                value={directRecipientEmail}
+                onChange={(e) => setDirectRecipientEmail(e.target.value)}
+                placeholder="student@gmail.com"
+                className="w-full py-1.5 px-3 bg-white border border-indigo-200 rounded-lg text-slate-900 font-medium outline-none focus:border-indigo-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                Recipient Student Name:
+              </label>
+              <input
+                type="text"
+                value={directRecipientName}
+                onChange={(e) => setDirectRecipientName(e.target.value)}
+                placeholder="Student Name"
+                className="w-full py-1.5 px-3 bg-white border border-indigo-200 rounded-lg text-slate-900 font-medium outline-none focus:border-indigo-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                Certificate Conferred:
+              </label>
+              <select
+                value={directRole}
+                onChange={(e) => setDirectRole(e.target.value as any)}
+                className="w-full py-1.5 px-3 bg-white border border-indigo-200 rounded-lg text-slate-900 font-medium cursor-pointer outline-none focus:border-indigo-600"
+              >
+                <option value="Participant">Certificate of Participation</option>
+                <option value="Winner - 1st Place">Certificate of Merit (1st Place)</option>
+              </select>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDirectTestDispatch}
+            disabled={isDirectSending}
+            className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            <Send className="w-4 h-4" />
+            <span>{isDirectSending ? 'Generating PDF & Dispatching Email...' : 'Send Live Email With Attached PDF 🚀'}</span>
+          </button>
         </div>
 
         {/* Sender Email & SMTP Configuration Box */}
