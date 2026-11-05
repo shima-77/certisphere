@@ -35,17 +35,25 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
   const [selectedPreviewPart, setSelectedPreviewPart] = useState<ParticipantRecord | null>(participants[0] || null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [dispatchNotice, setDispatchNotice] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
+  
+  // Custom Sender Email & Password inputs right inside the modal
+  const [senderEmail, setSenderEmail] = useState<string>('shimaferheenshaik@gmail.com');
+  const [senderPass, setSenderPass] = useState<string>('');
+  const [showSmtpSettings, setShowSmtpSettings] = useState<boolean>(false);
 
+  // CRITICAL: Only include participants who are marked PRESENT (exclude ABSENT students)
   const eventParticipants = participants.filter(p => p.eventId === event.id);
-  const unsentCount = eventParticipants.filter(p => p.dispatchStatus === 'UNSENT' || p.dispatchStatus === 'QUEUED').length;
-  const deliveredCount = eventParticipants.filter(p => p.dispatchStatus === 'DELIVERED').length;
-  const downloadedCount = eventParticipants.filter(p => p.dispatchStatus === 'DOWNLOADED').length;
+  const presentParticipants = eventParticipants.filter(p => p.attendanceStatus === 'PRESENT' || (p.certificateId && p.attendanceStatus !== 'ABSENT'));
+  const unsentCount = presentParticipants.filter(p => p.dispatchStatus === 'UNSENT' || p.dispatchStatus === 'QUEUED').length;
+  const deliveredCount = presentParticipants.filter(p => p.dispatchStatus === 'DELIVERED').length;
+  const downloadedCount = presentParticipants.filter(p => p.dispatchStatus === 'DOWNLOADED').length;
 
   const handleBulkDispatch = async () => {
     setIsDispatching(true);
     setDispatchNotice(null);
 
-    const recipientsToDispatch = eventParticipants
+    // Filter ONLY students who are verified PRESENT and have an email
+    const recipientsToDispatch = presentParticipants
       .filter(p => (p.dispatchStatus === 'UNSENT' || p.dispatchStatus === 'QUEUED') && p.email)
       .map(p => {
         const cert = certificates.find(c => c.id === p.certificateId);
@@ -58,14 +66,32 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
         };
       });
 
+    if (recipientsToDispatch.length === 0) {
+      setDispatchNotice({
+        type: 'info',
+        message: 'No pending unsent certificates found for students marked Present. Mark attendance as Present first!'
+      });
+      setIsDispatching(false);
+      return;
+    }
+
     try {
+      const customSmtp = senderPass.trim() ? {
+        host: 'smtp.gmail.com',
+        port: 587,
+        user: senderEmail.trim(),
+        pass: senderPass.trim(),
+        from: `VFSTR Academic Registry <${senderEmail.trim()}>`
+      } : undefined;
+
       const response = await fetch('/api/email/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipients: recipientsToDispatch,
           eventTitle: event.title,
-          senderName: `${event.department} Academic Coordinator`
+          senderName: `${event.department} Academic Coordinator`,
+          customSmtp
         })
       });
 
@@ -75,12 +101,12 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
       if (data.hasRealSmtp) {
         setDispatchNotice({
           type: 'success',
-          message: `Successfully dispatched real emails to ${data.sentCount} recipients via SMTP!`
+          message: `Direct Real Email Sent! Successfully delivered emails from ${senderEmail} to ${data.sentCount} PRESENT students.`
         });
       } else {
         setDispatchNotice({
           type: 'info',
-          message: `Emails processed & marked delivered in registry for ${data.sentCount} participants. (To send real Gmail/SMTP mail directly to student inboxes, configure SMTP in .env)`
+          message: `Processed ${data.sentCount} PRESENT students. Enter your 16-letter Gmail App Password in the box below to deliver directly to their real Gmail inboxes!`
         });
       }
     } catch (err: any) {
@@ -167,6 +193,56 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="text-xs text-amber-700">Downloaded / Verified</div>
             <div className="text-xl font-bold font-mono text-amber-800 mt-0.5">{downloadedCount}</div>
+          </div>
+        </div>
+
+        {/* Sender Email & SMTP Configuration Box */}
+        <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-indigo-700" />
+              <span className="text-xs font-bold text-indigo-950">Sender Email Configuration (Dispatch as Coordinator)</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSmtpSettings(!showSmtpSettings)}
+              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800"
+            >
+              {showSmtpSettings ? 'Hide Settings' : 'Configure Real Gmail'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                Sender Email Address:
+              </label>
+              <input
+                type="email"
+                value={senderEmail}
+                onChange={(e) => setSenderEmail(e.target.value)}
+                placeholder="your-email@gmail.com"
+                className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                Gmail 16-Letter App Password (for instant real delivery):
+              </label>
+              <input
+                type="password"
+                value={senderPass}
+                onChange={(e) => setSenderPass(e.target.value)}
+                placeholder="Paste 16-letter App Password (optional)"
+                className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 text-xs"
+              />
+            </div>
+          </div>
+          
+          <div className="text-[10px] text-slate-500 mt-2 flex items-center justify-between">
+            <span>Only students marked <strong>PRESENT</strong> ({presentParticipants.length} students) will receive certificates.</span>
+            <span className="text-indigo-700 font-medium">Auto-signed with VFSTR Academic Credentials</span>
           </div>
         </div>
 
