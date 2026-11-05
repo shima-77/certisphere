@@ -364,66 +364,119 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
 
       const orgName = recipientInstitution || institutionName || "Vignan's Foundation for Science, Technology & Research (VFSTR)";
 
+      const isMerit = Boolean(role && (
+        role.includes('Winner') || 
+        role.includes('Merit') || 
+        role.includes('1st') || 
+        role.includes('2nd') || 
+        role.includes('3rd') || 
+        role.includes('Place')
+      ));
+      const isSpeaker = Boolean(role && (role.includes('Speaker') || role.includes('Mentor')));
+      
+      const certTitle = isMerit 
+        ? `Certificate of Merit` 
+        : isSpeaker 
+          ? `Certificate of Appreciation` 
+          : `Certificate of Participation`;
+
+      const citationText = isMerit
+        ? `In recognition of outstanding performance, technical excellence, and securing <strong>${role}</strong> in <strong>"${eventTitle}"</strong> organized by ${orgName}.`
+        : `for active participation, dedication, and successful completion of all technical sessions in <strong>"${eventTitle}"</strong> conducted at ${orgName}.`;
+
       const htmlBody = `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
-          <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 16px; margin-bottom: 20px;">
-            <span style="font-size: 11px; font-weight: bold; color: #4f46e5; letter-spacing: 1px; text-transform: uppercase;">${orgName}</span>
-            <h2 style="font-size: 20px; font-weight: bold; color: #0f172a; margin: 6px 0 0 0;">Official Academic Credential Notification</h2>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+          
+          <div style="border-bottom: 2px solid #1e3a8a; padding-bottom: 14px; margin-bottom: 20px;">
+            <span style="font-size: 11px; font-weight: bold; color: #1e3a8a; letter-spacing: 1.5px; text-transform: uppercase;">${orgName}</span>
+            <h2 style="font-size: 19px; font-weight: bold; color: #0f172a; margin: 6px 0 0 0;">Official Institutional Credential Notification</h2>
           </div>
           
           <p style="font-size: 14px; color: #334155; line-height: 1.6;">Dear <strong>${name}</strong>,</p>
           
           <p style="font-size: 14px; color: #334155; line-height: 1.6;">
-            We are pleased to issue your official institutional certificate for active participation and achievement in <strong>"${eventTitle}"</strong> as <strong>${role || 'Participant'}</strong>.
+            We are pleased to issue your verified digital institutional credential for <strong>"${eventTitle}"</strong>.
           </p>
 
-          <!-- Visual Certificate Card inside Email for Instant Display on Mobile or Desktop -->
-          <div style="background: linear-gradient(135deg, #0f172a, #1e1b4b); border: 2px solid #6366f1; border-radius: 12px; padding: 22px; margin: 20px 0; color: #ffffff; text-align: center;">
-            <div style="font-size: 10px; letter-spacing: 2px; color: #a5b4fc; text-transform: uppercase; font-weight: bold;">
-              ${orgName}
+          <!-- Authentic Academic Parchment Certificate -->
+          <div style="background-color: #fffdfa; border: 3px double #b45309; border-radius: 6px; padding: 32px 24px; margin: 24px 0; color: #0f172a; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.06); outline: 4px solid #1e3a8a; outline-offset: -7px;">
+            
+            <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 18px;">
+              <div style="font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #1e3a8a; text-transform: uppercase;">
+                ${orgName}
+              </div>
+              <div style="font-size: 9px; color: #64748b; letter-spacing: 1px; margin-top: 3px;">
+                Deemed to be University · Accredited NAAC A+ · Institution of Excellence
+              </div>
             </div>
-            <div style="font-size: 17px; font-weight: 800; color: #f8fafc; margin-top: 8px; text-transform: uppercase;">
-              Official Certificate of ${role ? (role.includes('Winner') || role.includes('Merit') ? 'Merit' : 'Participation') : 'Participation'}
+
+            <div style="font-size: 10px; letter-spacing: 3px; color: #b45309; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">
+              OFFICIAL ACADEMIC CREDENTIAL
             </div>
-            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
-              This certifies that
+
+            <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 22px; font-weight: bold; color: #0f172a; letter-spacing: 1px; text-transform: uppercase;">
+              ${certTitle}
             </div>
-            <div style="font-size: 22px; font-weight: bold; color: #ffffff; margin: 10px 0; letter-spacing: 0.5px;">
+
+            <div style="font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 13px; color: #64748b; margin: 16px 0 6px 0;">
+              This is proudly presented to
+            </div>
+
+            <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: bold; color: #1e3a8a; letter-spacing: 0.5px; border-bottom: 2px solid #b45309; display: inline-block; padding: 0 24px 4px 24px; margin-bottom: 14px;">
               ${name}
             </div>
-            <div style="font-size: 12px; color: #cbd5e1;">
-              for achievement as <strong>${role || 'Participant'}</strong> in <strong>"${eventTitle}"</strong>
+
+            <div style="font-size: 13px; color: #334155; line-height: 1.7; max-width: 480px; margin: 0 auto;">
+              ${citationText}
             </div>
-            <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.15); font-family: monospace; font-size: 12px; color: #38bdf8;">
-              Certificate ID: ${certificateId}
+
+            <!-- Signatures Table -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 26px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+              <tr>
+                <td align="left" style="width: 35%; vertical-align: bottom;">
+                  <div style="font-family: 'Brush Script MT', cursive, Georgia, serif; font-size: 17px; color: #1e3a8a;">Dr. K.V. Krishna Kishore</div>
+                  <div style="border-top: 1px solid #94a3b8; width: 130px; margin-top: 4px; padding-top: 4px; font-size: 9px; font-weight: bold; color: #475569; text-transform: uppercase;">
+                    Dean of Academic Affairs
+                  </div>
+                </td>
+                <td align="center" style="width: 30%; vertical-align: middle;">
+                  <div style="display: inline-block; border: 2px solid #b45309; border-radius: 50%; padding: 8px; width: 56px; height: 56px; text-align: center; background-color: #fef3c7;">
+                    <div style="font-size: 8px; font-weight: bold; color: #92400e; text-transform: uppercase; margin-top: 10px; line-height: 1.1;">
+                      VFSTR<br/>SEAL
+                    </div>
+                  </div>
+                </td>
+                <td align="right" style="width: 35%; vertical-align: bottom;">
+                  <div style="font-family: 'Brush Script MT', cursive, Georgia, serif; font-size: 17px; color: #1e3a8a;">Dr. D. Venkatesulu</div>
+                  <div style="border-top: 1px solid #94a3b8; width: 130px; margin-top: 4px; padding-top: 4px; font-size: 9px; font-weight: bold; color: #475569; text-transform: uppercase; margin-left: auto;">
+                    Head of Department
+                  </div>
+                </td>
+              </tr>
+            </table>
+
+            <div style="margin-top: 20px; padding: 10px; background-color: #f1f5f9; border-radius: 6px; font-family: monospace; font-size: 11px; color: #475569;">
+              <strong>Certificate ID:</strong> ${certificateId} &nbsp;·&nbsp; <span style="color: #059669; font-weight: bold;">✔ Cryptographic SHA-256 Tamper-Proof</span>
             </div>
+
           </div>
 
-          <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 20px 0;">
-            <div style="font-size: 12px; color: #64748b;">Certificate Reference ID:</div>
-            <div style="font-family: monospace; font-size: 16px; font-weight: bold; color: #0f172a; margin-top: 2px;">${certificateId}</div>
-            
-            <div style="margin-top: 12px; font-size: 12px; color: #64748b;">Security Standard:</div>
-            <div style="font-size: 12px; font-weight: 600; color: #059669;">Cryptographic SHA-256 Verified · QR Code Bound</div>
-          </div>
-
-          <div style="text-align: center; margin: 28px 0;">
-            <a href="${verificationUrl}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px; display: inline-block;">
-              View & Verify Certificate Online
+          <div style="text-align: center; margin: 24px 0 16px 0;">
+            <a href="${verificationUrl}" style="background-color: #1e3a8a; color: #ffffff; padding: 13px 28px; font-size: 14px; font-weight: 700; text-decoration: none; border-radius: 8px; display: inline-block; box-shadow: 0 4px 10px rgba(30, 58, 138, 0.25);">
+              📜 Open High-Res Certificate & Save PDF
             </a>
           </div>
 
-          <p style="font-size: 12px; color: #64748b; line-height: 1.5;">
-            You can verify your credential authenticity at any time using your Certificate ID <strong>${certificateId}</strong>. If accessing locally on the same computer: <br/>
-            <code style="background-color: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${verificationUrl}</code>
+          <p style="font-size: 11px; color: #64748b; line-height: 1.5; text-align: center;">
+            Verification Portal Link: <br/>
+            <a href="${verificationUrl}" style="color: #4f46e5; word-break: break-all;">${verificationUrl}</a>
           </p>
 
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px; font-size: 11px; color: #94a3b8; text-align: center;">
-            Issued by Dean of Academic Affairs & Event Coordination Board<br/>
+            Issued by Dean of Academic Affairs & Institutional Activity Board<br/>
             ${orgName}
           </div>
-        </div>
-      `;
+        </div>      `;
 
       if (resendApiKey) {
         try {

@@ -12,6 +12,7 @@ import {
   ExternalLink,
   QrCode,
   FileText,
+  Download,
   UserCheck
 } from 'lucide-react';
 import { CertificateRecord, CertificateTemplate } from '../types';
@@ -295,13 +296,18 @@ export const PublicVerifyView: React.FC<PublicVerifyViewProps> = ({
             </div>
 
             {/* Actions */}
-            <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Verified Genuine Credential</span>
+              </div>
               <button
                 type="button"
                 onClick={() => onOpenCertificateModal(matchedCertificate)}
-                className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] rounded-xl shadow-md transition-all cursor-pointer"
               >
-                Inspect High-Res Certificate
+                <Download className="w-4 h-4" />
+                <span>View Official Certificate & Save PDF</span>
               </button>
             </div>
 
