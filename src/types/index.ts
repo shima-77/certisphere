@@ -60,6 +60,8 @@ export interface CertificateTemplate {
   showWatermark: boolean;
   customBackgroundImage?: string; // Base64 or URL of custom uploaded certificate background
   customLogoUrl?: string; // Custom uploaded college logo
+  showInstitutionHeader?: boolean; // Toggle displaying university name & subtitle on top of certificate
+  hideBordersOnCustomBackground?: boolean; // When custom image background is present, hide standard ornamental borders
 }
 
 export interface InstitutionalEvent {

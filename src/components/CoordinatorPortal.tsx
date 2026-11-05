@@ -19,7 +19,11 @@ import {
   ShieldAlert,
   ChevronRight,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Edit2,
+  RotateCcw,
+  Save,
+  Check
 } from 'lucide-react';
 import { 
   InstitutionalEvent, 
@@ -40,6 +44,9 @@ interface CoordinatorPortalProps {
   onUpdateRole: (participantId: string, role: CertificateRole) => void;
   onToggleLockRegistration: (eventId: string) => void;
   onGenerateCertificatesForEvent: (eventId: string) => void;
+  onRegenerateAllCertificatesForEvent?: (eventId: string) => void;
+  onUpdateParticipant?: (updatedParticipant: ParticipantRecord) => void;
+  onUpdateEventTemplate?: (eventId: string, templateId: string) => void;
   onOpenDistributionModal: (eventId: string) => void;
   onInspectCertificate: (certId: string) => void;
 }
@@ -53,11 +60,24 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
   onUpdateRole,
   onToggleLockRegistration,
   onGenerateCertificatesForEvent,
+  onRegenerateAllCertificatesForEvent,
+  onUpdateParticipant,
+  onUpdateEventTemplate,
   onOpenDistributionModal,
   onInspectCertificate
 }) => {
   // Coordinator Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [editingParticipant, setEditingParticipant] = useState<ParticipantRecord | null>(null);
+  const [editStudentForm, setEditStudentForm] = useState({
+    name: '',
+    rollNo: '',
+    email: '',
+    department: '',
+    yearOfStudy: '',
+    section: '',
+    role: 'Participant' as CertificateRole
+  });
   const [coordinatorName, setCoordinatorName] = useState<string>('Dr. K.V. Krishna Kishore');
   const [coordinatorDept, setCoordinatorDept] = useState<string>('CSE');
   const [loginEmail, setLoginEmail] = useState<string>('coordinator.cse@vignan.ac.in');
@@ -389,6 +409,35 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
               </div>
 
             </div>
+
+            {/* Template Selector & University Brand Strip */}
+            <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-indigo-200 font-semibold flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5 text-indigo-300" />
+                  <span>Certificate Template:</span>
+                </span>
+                <select
+                  value={currentEvent.templateId}
+                  onChange={(e) => onUpdateEventTemplate && onUpdateEventTemplate(currentEvent.id, e.target.value)}
+                  className="bg-indigo-950/90 text-white border border-indigo-400/50 rounded-lg px-2.5 py-1 text-xs outline-none cursor-pointer font-medium"
+                >
+                  {templates.map(tpl => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name} ({tpl.departmentTheme})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="text-indigo-200 text-[11px] flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-amber-300" />
+                <span>University Header:</span>
+                <strong className="text-white font-semibold">
+                  {templates.find(t => t.id === currentEvent.templateId)?.institutionName || 'University Institution'}
+                </strong>
+              </div>
+            </div>
           </div>
 
           {/* Real-Time Live Statistics Strip */}
@@ -482,6 +531,17 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
                   <span>Bulk Issue Certificates ({presentCount})</span>
                 </button>
 
+                {issuedCount > 0 && (
+                  <button
+                    onClick={() => onRegenerateAllCertificatesForEvent ? onRegenerateAllCertificatesForEvent(currentEvent.id) : onGenerateCertificatesForEvent(currentEvent.id)}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-colors cursor-pointer shadow-xs"
+                    title="Update and re-issue all certificates with latest university name, template, and student names"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Re-Issue / Update All Certificates ({issuedCount})</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => onOpenDistributionModal(currentEvent.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
@@ -571,7 +631,27 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
 
                           {/* Name & Email */}
                           <td className="py-3 px-3">
-                            <div className="font-bold text-slate-900">{p.name}</div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900">{p.name}</span>
+                              <button
+                                onClick={() => {
+                                  setEditingParticipant(p);
+                                  setEditStudentForm({
+                                    name: p.name,
+                                    rollNo: p.rollNo,
+                                    email: p.email,
+                                    department: p.department || '',
+                                    yearOfStudy: p.yearOfStudy || '',
+                                    section: p.section || '',
+                                    role: p.role
+                                  });
+                                }}
+                                className="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                                title="Edit Student Name & Roll No"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            </div>
                             <div className="text-[11px] text-slate-500 font-mono">{p.email}</div>
                           </td>
 
@@ -682,6 +762,139 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
       ) : (
         <div className="p-8 bg-white border border-slate-200 rounded-xl text-center text-slate-500">
           No events found. Please create an event in the Events tab.
+        </div>
+      )}
+
+      {/* Student Edit Modal */}
+      {editingParticipant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-indigo-600" />
+                <span>Edit Student & Certificate Details</span>
+              </h3>
+              <button
+                onClick={() => setEditingParticipant(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Student Full Name (Prints on Certificate)</label>
+                <input
+                  type="text"
+                  value={editStudentForm.name}
+                  onChange={(e) => setEditStudentForm({ ...editStudentForm, name: e.target.value })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  placeholder="e.g. Shaik Aalima Akmal"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Roll Number / Student ID</label>
+                <input
+                  type="text"
+                  value={editStudentForm.rollNo}
+                  onChange={(e) => setEditStudentForm({ ...editStudentForm, rollNo: e.target.value })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  placeholder="e.g. 241FA18351"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={editStudentForm.email}
+                  onChange={(e) => setEditStudentForm({ ...editStudentForm, email: e.target.value })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  placeholder="student@vignan.ac.in"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Department</label>
+                  <input
+                    type="text"
+                    value={editStudentForm.department}
+                    onChange={(e) => setEditStudentForm({ ...editStudentForm, department: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Year</label>
+                  <input
+                    type="text"
+                    value={editStudentForm.yearOfStudy}
+                    onChange={(e) => setEditStudentForm({ ...editStudentForm, yearOfStudy: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Section</label>
+                  <input
+                    type="text"
+                    value={editStudentForm.section}
+                    onChange={(e) => setEditStudentForm({ ...editStudentForm, section: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Certificate Award Role</label>
+                <select
+                  value={editStudentForm.role}
+                  onChange={(e) => setEditStudentForm({ ...editStudentForm, role: e.target.value as CertificateRole })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-medium text-slate-900"
+                >
+                  <option value="Participant">Participation Certificate</option>
+                  <option value="Winner - 1st Place">Merit Award - 1st Place</option>
+                  <option value="Runner Up - 2nd Place">Merit Award - 2nd Place</option>
+                  <option value="2nd Runner Up - 3rd Place">Merit Award - 3rd Place</option>
+                  <option value="Merit Award">Special Merit Award</option>
+                  <option value="Organizing Committee">Organizing Committee</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingParticipant(null)}
+                className="px-3.5 py-1.5 text-xs text-slate-600 hover:text-slate-800 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!onUpdateParticipant) return;
+                  const updated: ParticipantRecord = {
+                    ...editingParticipant,
+                    name: editStudentForm.name.trim() || editingParticipant.name,
+                    rollNo: editStudentForm.rollNo.trim() || editingParticipant.rollNo,
+                    email: editStudentForm.email.trim() || editingParticipant.email,
+                    department: editStudentForm.department,
+                    yearOfStudy: editStudentForm.yearOfStudy,
+                    section: editStudentForm.section,
+                    role: editStudentForm.role
+                  };
+                  onUpdateParticipant(updated);
+                  setEditingParticipant(null);
+                }}
+                className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Save Student & Update Certificate</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

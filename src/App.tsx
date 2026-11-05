@@ -356,7 +356,7 @@ export default function App() {
         recipientName: part.name,
         recipientEmail: part.email,
         recipientRollNo: part.rollNo,
-        recipientInstitution: part.institution || institution.name,
+        recipientInstitution: eventTemplate.institutionName || institution.name,
         role: part.role,
         rank: part.rank,
         projectTitle: part.projectTitle,
@@ -365,7 +365,7 @@ export default function App() {
         status: 'VALID',
         templateId: eventTemplate.id,
         cryptographicHash: hash,
-        issuerAuthority: `${institution.name} Academic Assessment Board`,
+        issuerAuthority: `${eventTemplate.institutionName || institution.name} Academic Assessment Board`,
         publicVerificationUrl: `${window.location.origin}/?verify=${certId}`,
         qrPayload: `${window.location.origin}/?verify=${certId}`,
         downloadsCount: 0,
@@ -443,10 +443,181 @@ export default function App() {
     );
   };
 
-  // Update Template
+  // Update Template (Instantly syncs University Name across app and certificates)
   const handleUpdateTemplate = (updated: CertificateTemplate) => {
     setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
-    addAuditLog('TEMPLATE_UPDATED', 'TEMPLATE', updated.id, `Template "${updated.name}" styling modified.`);
+
+    if (updated.institutionName) {
+      setInstitution(prev => ({
+        ...prev,
+        name: updated.institutionName
+      }));
+      localStorage.setItem('certisphere_vfstr_v3_institution', JSON.stringify({
+        ...institution,
+        name: updated.institutionName
+      }));
+    }
+
+    // Immediately update all existing certificates using this template
+    setCertificates(prev => prev.map(c => {
+      if (c.templateId === updated.id) {
+        return {
+          ...c,
+          recipientInstitution: updated.institutionName,
+          issuerAuthority: `${updated.institutionName} Academic Assessment Board`
+        };
+      }
+      return c;
+    }));
+
+    addAuditLog('TEMPLATE_UPDATED', 'TEMPLATE', updated.id, `Template "${updated.name}" updated. University Name set to: "${updated.institutionName}".`);
+  };
+
+  // Update Participant (and sync to certificate if already issued)
+  const handleUpdateParticipant = async (updatedPart: ParticipantRecord) => {
+    setParticipants(prev => prev.map(p => p.id === updatedPart.id ? updatedPart : p));
+
+    if (updatedPart.certificateId) {
+      const targetCert = certificates.find(c => c.id === updatedPart.certificateId);
+      if (targetCert) {
+        const rawStringToHash = `${targetCert.id}::${updatedPart.name}::${updatedPart.rollNo}::${targetCert.eventTitle}::${updatedPart.role}::${targetCert.citation}::${targetCert.issueDate}`;
+        const newHash = await generateSha256(rawStringToHash);
+
+        setCertificates(prev => prev.map(c => c.id === targetCert.id ? {
+          ...c,
+          recipientName: updatedPart.name,
+          recipientRollNo: updatedPart.rollNo,
+          recipientEmail: updatedPart.email,
+          role: updatedPart.role,
+          cryptographicHash: newHash
+        } : c));
+
+        if (inspectingCert && inspectingCert.id === targetCert.id) {
+          setInspectingCert(prev => prev ? {
+            ...prev,
+            recipientName: updatedPart.name,
+            recipientRollNo: updatedPart.rollNo,
+            recipientEmail: updatedPart.email,
+            role: updatedPart.role,
+            cryptographicHash: newHash
+          } : null);
+        }
+      }
+    }
+
+    addAuditLog('ISSUED', 'CERTIFICATE', updatedPart.id, `Updated participant: "${updatedPart.name}" (${updatedPart.rollNo}).`);
+  };
+
+  // Update Certificate directly from modal or viewer
+  const handleUpdateCertificate = async (updatedCert: CertificateRecord) => {
+    const rawStringToHash = `${updatedCert.id}::${updatedCert.recipientName}::${updatedCert.recipientRollNo}::${updatedCert.eventTitle}::${updatedCert.role}::${updatedCert.citation}::${updatedCert.issueDate}`;
+    const newHash = await generateSha256(rawStringToHash);
+    const finalizedCert = { ...updatedCert, cryptographicHash: newHash };
+
+    setCertificates(prev => prev.map(c => c.id === updatedCert.id ? finalizedCert : c));
+    setInspectingCert(finalizedCert);
+
+    if (finalizedCert.participantId) {
+      setParticipants(prev => prev.map(p => p.id === finalizedCert.participantId ? {
+        ...p,
+        name: finalizedCert.recipientName,
+        rollNo: finalizedCert.recipientRollNo,
+        role: finalizedCert.role
+      } : p));
+    }
+
+    addAuditLog('ISSUED', 'CERTIFICATE', finalizedCert.id, `Certificate details updated for recipient: "${finalizedCert.recipientName}".`);
+  };
+
+  // Re-Generate / Update All Certificates for an Event
+  const handleRegenerateAllCertificatesForEvent = async (eventId: string) => {
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+
+    const eventTemplate = templates.find(t => t.id === event.templateId) || templates[0];
+    const eligibleParticipants = participants.filter(
+      p => p.eventId === eventId && p.attendanceStatus !== 'ABSENT'
+    );
+
+    if (eligibleParticipants.length === 0) return;
+
+    const updatedCertsMap = new Map<string, CertificateRecord>();
+    const partToCertId = new Map<string, string>();
+
+    for (let i = 0; i < eligibleParticipants.length; i++) {
+      const part = eligibleParticipants[i];
+      const existingCert = certificates.find(c => c.participantId === part.id || c.id === part.certificateId);
+      const certId = existingCert ? existingCert.id : generateCertificateId(institution.code, i);
+      const certNum = existingCert ? existingCert.certificateNumber : `${institution.code}/${event.category.substring(0, 3).toUpperCase()}/2026/${String(certificates.length + i + 1).padStart(4, '0')}`;
+
+      const citation = eventTemplate.defaultCitationTemplate.replace('{ROLE}', part.role);
+      const rawStringToHash = `${certId}::${part.name}::${part.rollNo}::${event.title}::${part.role}::${citation}::${existingCert?.issueDate || new Date().toISOString().split('T')[0]}`;
+      const hash = await generateSha256(rawStringToHash);
+
+      const record: CertificateRecord = {
+        id: certId,
+        certificateNumber: certNum,
+        eventId: event.id,
+        eventTitle: event.title,
+        eventCategory: event.category,
+        participantId: part.id,
+        recipientName: part.name,
+        recipientEmail: part.email,
+        recipientRollNo: part.rollNo,
+        recipientInstitution: eventTemplate.institutionName || institution.name,
+        role: part.role,
+        rank: part.rank,
+        projectTitle: part.projectTitle,
+        citation,
+        issueDate: existingCert?.issueDate || new Date().toISOString().split('T')[0],
+        status: existingCert?.status || 'VALID',
+        templateId: eventTemplate.id,
+        cryptographicHash: hash,
+        issuerAuthority: `${eventTemplate.institutionName || institution.name} Academic Assessment Board`,
+        publicVerificationUrl: `${window.location.origin}/?verify=${certId}`,
+        qrPayload: `${window.location.origin}/?verify=${certId}`,
+        downloadsCount: existingCert?.downloadsCount || 0,
+        verificationsCount: existingCert?.verificationsCount || 0
+      };
+
+      updatedCertsMap.set(certId, record);
+      partToCertId.set(part.id, certId);
+    }
+
+    setCertificates(prev => {
+      const withoutThisEvent = prev.filter(c => c.eventId !== eventId);
+      return [...Array.from(updatedCertsMap.values()), ...withoutThisEvent];
+    });
+
+    setParticipants(prev => prev.map(p => {
+      if (partToCertId.has(p.id)) {
+        return {
+          ...p,
+          certificateId: partToCertId.get(p.id),
+          issueStatus: 'ISSUED' as const
+        };
+      }
+      return p;
+    }));
+
+    setEvents(prev => prev.map(e => e.id === eventId ? {
+      ...e,
+      certificatesIssued: updatedCertsMap.size
+    } : e));
+
+    addAuditLog(
+      'ISSUED', 
+      'EVENT', 
+      eventId, 
+      `Re-issued / updated ${updatedCertsMap.size} certificates for "${event.title}" with template "${eventTemplate.name}" and university "${eventTemplate.institutionName}".`
+    );
+  };
+
+  // Update Event Template
+  const handleUpdateEventTemplate = (eventId: string, templateId: string) => {
+    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, templateId } : e));
+    const tpl = templates.find(t => t.id === templateId);
+    addAuditLog('TEMPLATE_UPDATED', 'EVENT', eventId, `Assigned template "${tpl?.name || templateId}" to event.`);
   };
 
   // Dispatch All Unsent Emails for an Event
@@ -565,6 +736,9 @@ export default function App() {
             onUpdateRole={handleUpdateRole}
             onToggleLockRegistration={handleToggleLockRegistration}
             onGenerateCertificatesForEvent={handleGenerateCertificatesForEvent}
+            onRegenerateAllCertificatesForEvent={handleRegenerateAllCertificatesForEvent}
+            onUpdateParticipant={handleUpdateParticipant}
+            onUpdateEventTemplate={handleUpdateEventTemplate}
             onOpenDistributionModal={(evtId) => setDistributionEventId(evtId)}
             onInspectCertificate={(certId) => {
               const found = certificates.find(c => c.id === certId);
@@ -687,9 +861,11 @@ export default function App() {
         <CertificateDetailModal
           certificate={inspectingCert}
           template={inspectingTemplate}
+          templates={templates}
           onClose={() => setInspectingCert(null)}
           onVerify={handleTriggerQuickVerify}
           onUpdateCitation={handleUpdateCitation}
+          onUpdateCertificate={handleUpdateCertificate}
         />
       )}
 

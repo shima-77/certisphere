@@ -715,16 +715,19 @@ maya devi, maya.23@vignan.ac.in, 231FA06019, Participant, 92`;
               </div>
 
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Department Certificate Template</label>
+                <label className="font-semibold text-slate-700 block mb-1">Department Certificate Template & University Branding</label>
                 <select
                   value={newEventTemplateId}
                   onChange={(e) => setNewEventTemplateId(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-medium"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-medium text-xs text-slate-900"
                 >
                   {templates.map(t => (
-                    <option key={t.id} value={t.id}>[{t.departmentTheme}] {t.name}</option>
+                    <option key={t.id} value={t.id}>[{t.departmentTheme}] {t.name} — {t.institutionName}</option>
                   ))}
                 </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Selected University: <strong className="text-slate-800">{templates.find(t => t.id === newEventTemplateId)?.institutionName}</strong>
+                </p>
               </div>
 
               <div>

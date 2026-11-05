@@ -12,7 +12,9 @@ import {
   Filter,
   Upload,
   Image as ImageIcon,
-  Trash2
+  Trash2,
+  Building2,
+  Plus
 } from 'lucide-react';
 import { CertificateTemplate, CertificateRecord, DepartmentTheme } from '../types';
 import { CertificateRenderer } from './CertificateRenderer';
@@ -266,7 +268,46 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({
               </div>
             </div>
 
-            {/* Template Name */}
+            {/* University / Institution Name */}
+            <div className="p-3.5 bg-amber-50/80 border border-amber-300 rounded-xl space-y-2 shadow-xs">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-amber-950 block text-xs flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-amber-700" />
+                  <span>University / College Name (Certificate Top Header)</span>
+                </label>
+                <span className="text-[10px] bg-amber-200/80 text-amber-900 font-bold px-1.5 py-0.5 rounded">
+                  Editable
+                </span>
+              </div>
+              <input
+                type="text"
+                value={draft.institutionName}
+                onChange={(e) => setDraft({ ...draft, institutionName: e.target.value })}
+                placeholder="e.g. Vignan's Foundation for Science, Technology & Research"
+                className="w-full p-2.5 bg-white border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-bold text-slate-900 text-xs shadow-xs"
+              />
+              <p className="text-[10px] text-amber-900">
+                Type your university name here. When saved, this updates the top header on certificates and university profile.
+              </p>
+              
+              {/* Toggle for Show/Hide University Header */}
+              <div className="pt-2 border-t border-amber-200/70 mt-1">
+                <label className="flex items-center gap-2 text-xs text-amber-950 font-medium cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draft.showInstitutionHeader !== false}
+                    onChange={(e) => setDraft({ ...draft, showInstitutionHeader: e.target.checked })}
+                    className="rounded text-amber-700 focus:ring-amber-500"
+                  />
+                  <span>Display University Header Text on Certificate</span>
+                </label>
+                <span className="text-[10px] text-amber-800/80 block ml-5">
+                  (Uncheck if your uploaded certificate border image already has the university name printed on it)
+                </span>
+              </div>
+            </div>
+
+            {/* Template Display Name */}
             <div>
               <label className="font-semibold text-slate-700 block mb-1">Template Display Name</label>
               <input
@@ -295,6 +336,18 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({
                 type="text"
                 value={draft.headerTitle}
                 onChange={(e) => setDraft({ ...draft, headerTitle: e.target.value })}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+            </div>
+
+            {/* Certificate Sub-Header Prose */}
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Certificate Subtitle / Conferred Prose</label>
+              <input
+                type="text"
+                value={draft.headerSubtitle}
+                onChange={(e) => setDraft({ ...draft, headerSubtitle: e.target.value })}
+                placeholder="e.g. Conferred with highest university honors unto"
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               />
             </div>

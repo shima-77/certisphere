@@ -285,21 +285,27 @@ export const CertificateRenderer: React.FC<CertificateRendererProps> = ({
         
         {/* Header Zone: Institution Name & Subtitle */}
         <div className="text-center pt-2">
-          <div className="flex items-center justify-center gap-2 mb-1.5">
-            <span className={`text-xl sm:text-2xl font-bold tracking-tight uppercase ${
-              template.style === 'modern-tech' ? 'text-white' : 'text-slate-900'
-            }`}>
-              {template.institutionName}
-            </span>
-          </div>
-          
-          <div className={`text-[11px] sm:text-xs tracking-wider uppercase ${
-            template.style === 'modern-tech' ? 'text-cyan-400/80' : 'text-slate-600'
-          }`}>
-            {template.institutionSubtitle}
-          </div>
+          {template.showInstitutionHeader !== false && (
+            <>
+              <div className="flex items-center justify-center gap-2 mb-1.5">
+                <span className={`text-xl sm:text-2xl font-bold tracking-tight uppercase ${
+                  template.style === 'modern-tech' ? 'text-white' : 'text-slate-900'
+                }`}>
+                  {template.institutionName || certificate.recipientInstitution || "University Institution"}
+                </span>
+              </div>
+              
+              {template.institutionSubtitle && (
+                <div className={`text-[11px] sm:text-xs tracking-wider uppercase ${
+                  template.style === 'modern-tech' ? 'text-cyan-400/80' : 'text-slate-600'
+                }`}>
+                  {template.institutionSubtitle}
+                </div>
+              )}
 
-          <div className="w-32 h-[1.5px] mx-auto my-3 bg-gradient-to-r from-transparent via-amber-600 to-transparent opacity-80" />
+              <div className="w-32 h-[1.5px] mx-auto my-3 bg-gradient-to-r from-transparent via-amber-600 to-transparent opacity-80" />
+            </>
+          )}
 
           {/* Certificate Title */}
           <h2 className={`text-2xl sm:text-3xl font-extrabold tracking-wide uppercase ${fontHeading} ${

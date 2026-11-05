@@ -64,6 +64,7 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
         name: p.name,
         certificateId: p.certificateId || `CERT-${p.rollNo}`,
         role: p.role,
+        recipientInstitution: cert?.recipientInstitution || p.institution,
         verificationUrl: cert ? `${window.location.origin}/?verify=${cert.id}` : `${window.location.origin}/?student=${encodeURIComponent(p.email)}`
       };
     });

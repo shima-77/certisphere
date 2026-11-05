@@ -314,7 +314,8 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
       recipients, 
       eventTitle, 
       senderName, 
-      customSmtp 
+      customSmtp,
+      institutionName
     } = req.body;
 
     if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
@@ -326,7 +327,7 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
     const port = parseInt(customSmtp?.port || process.env.SMTP_PORT || '587');
     const user = customSmtp?.user || process.env.SMTP_USER;
     const pass = customSmtp?.pass || process.env.SMTP_PASS;
-    const from = customSmtp?.from || process.env.SMTP_FROM || `${senderName || 'CertiSphere VFSTR'} <no-reply@vignan.ac.in>`;
+    const from = customSmtp?.from || process.env.SMTP_FROM || `${senderName || 'CertiSphere Registry'} <no-reply@vignan.ac.in>`;
 
     const hasRealSmtp = Boolean(host && user && pass);
 
@@ -351,13 +352,16 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
         name, 
         certificateId, 
         role, 
-        verificationUrl 
+        verificationUrl,
+        recipientInstitution
       } = recipient;
+
+      const orgName = recipientInstitution || institutionName || "Vignan's Foundation for Science, Technology & Research (VFSTR)";
 
       const htmlBody = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
           <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 16px; margin-bottom: 20px;">
-            <span style="font-size: 11px; font-weight: bold; color: #4f46e5; letter-spacing: 1px; text-transform: uppercase;">VIGNAN'S FOUNDATION FOR SCIENCE, TECHNOLOGY & RESEARCH (VFSTR)</span>
+            <span style="font-size: 11px; font-weight: bold; color: #4f46e5; letter-spacing: 1px; text-transform: uppercase;">${orgName}</span>
             <h2 style="font-size: 20px; font-weight: bold; color: #0f172a; margin: 6px 0 0 0;">Official Academic Credential Notification</h2>
           </div>
           
@@ -366,6 +370,28 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
           <p style="font-size: 14px; color: #334155; line-height: 1.6;">
             We are pleased to issue your official institutional certificate for active participation and achievement in <strong>"${eventTitle}"</strong> as <strong>${role || 'Participant'}</strong>.
           </p>
+
+          <!-- Visual Certificate Card inside Email for Instant Display on Mobile or Desktop -->
+          <div style="background: linear-gradient(135deg, #0f172a, #1e1b4b); border: 2px solid #6366f1; border-radius: 12px; padding: 22px; margin: 20px 0; color: #ffffff; text-align: center;">
+            <div style="font-size: 10px; letter-spacing: 2px; color: #a5b4fc; text-transform: uppercase; font-weight: bold;">
+              ${orgName}
+            </div>
+            <div style="font-size: 17px; font-weight: 800; color: #f8fafc; margin-top: 8px; text-transform: uppercase;">
+              Official Certificate of ${role ? (role.includes('Winner') || role.includes('Merit') ? 'Merit' : 'Participation') : 'Participation'}
+            </div>
+            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
+              This certifies that
+            </div>
+            <div style="font-size: 22px; font-weight: bold; color: #ffffff; margin: 10px 0; letter-spacing: 0.5px;">
+              ${name}
+            </div>
+            <div style="font-size: 12px; color: #cbd5e1;">
+              for achievement as <strong>${role || 'Participant'}</strong> in <strong>"${eventTitle}"</strong>
+            </div>
+            <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.15); font-family: monospace; font-size: 12px; color: #38bdf8;">
+              Certificate ID: ${certificateId}
+            </div>
+          </div>
 
           <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 20px 0;">
             <div style="font-size: 12px; color: #64748b;">Certificate Reference ID:</div>
@@ -382,12 +408,13 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
           </div>
 
           <p style="font-size: 12px; color: #64748b; line-height: 1.5;">
-            You can verify your credential authenticity at any time using your Certificate ID or by scanning the embedded QR code on your document.
+            You can verify your credential authenticity at any time using your Certificate ID <strong>${certificateId}</strong>. If accessing locally on the same computer: <br/>
+            <code style="background-color: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${verificationUrl}</code>
           </p>
 
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px; font-size: 11px; color: #94a3b8; text-align: center;">
             Issued by Dean of Academic Affairs & Event Coordination Board<br/>
-            Vignan's Foundation for Science, Technology & Research (Deemed to be University), Vadlamudi, Guntur.
+            ${orgName}
           </div>
         </div>
       `;

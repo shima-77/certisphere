@@ -9,29 +9,69 @@ import {
   Download, 
   X,
   RotateCcw,
-  AlertTriangle
+  AlertTriangle,
+  Edit3,
+  Save,
+  Building2,
+  User
 } from 'lucide-react';
-import { CertificateRecord, CertificateTemplate } from '../types';
+import { CertificateRecord, CertificateTemplate, CertificateRole } from '../types';
 import { CertificateRenderer } from './CertificateRenderer';
 
 interface CertificateDetailModalProps {
   certificate: CertificateRecord;
   template: CertificateTemplate;
+  templates?: CertificateTemplate[];
   onClose: () => void;
   onVerify: (certId: string) => void;
   onUpdateCitation: (certId: string, newCitation: string) => void;
+  onUpdateCertificate?: (updatedCert: CertificateRecord) => void;
 }
 
 export const CertificateDetailModal: React.FC<CertificateDetailModalProps> = ({
   certificate,
   template,
+  templates = [],
   onClose,
   onVerify,
   onUpdateCitation,
+  onUpdateCertificate,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [isAiRewriting, setIsAiRewriting] = useState(false);
   const [toneSelection, setToneSelection] = useState<'Formal Academic' | 'Cutting-Edge Innovation' | 'Dean Commendation'>('Formal Academic');
+  
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    recipientName: certificate.recipientName,
+    recipientRollNo: certificate.recipientRollNo,
+    recipientInstitution: certificate.recipientInstitution,
+    eventTitle: certificate.eventTitle,
+    role: certificate.role,
+    rank: certificate.rank || '',
+    projectTitle: certificate.projectTitle || '',
+    citation: certificate.citation,
+    templateId: certificate.templateId
+  });
+  const [saveSuccessFeedback, setSaveSuccessFeedback] = useState(false);
+
+  const activeTemplate = templates.find(t => t.id === editForm.templateId) || template;
+  const activeCertificate: CertificateRecord = {
+    ...certificate,
+    ...editForm
+  };
+
+  const handleSaveCertificateEdits = () => {
+    if (onUpdateCertificate) {
+      onUpdateCertificate(activeCertificate);
+    }
+    setSaveSuccessFeedback(true);
+    setTimeout(() => {
+      setSaveSuccessFeedback(false);
+      setIsEditing(false);
+    }, 1200);
+  };
 
   const handleCopyLink = () => {
     const link = `${window.location.origin}/?verify=${certificate.id}`;
@@ -103,6 +143,37 @@ export const CertificateDetailModal: React.FC<CertificateDetailModalProps> = ({
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              onClick={() => setIsEditing(!isEditing)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                isEditing 
+                  ? 'bg-amber-600 text-white shadow-xs' 
+                  : 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100'
+              }`}
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>{isEditing ? 'Close Editor' : 'Edit Names & Details'}</span>
+            </button>
+
+            {isEditing && (
+              <button
+                onClick={handleSaveCertificateEdits}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs cursor-pointer"
+              >
+                {saveSuccessFeedback ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-white" />
+                    <span>Saved!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            <button
               onClick={handlePrint}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
             >
@@ -144,12 +215,114 @@ export const CertificateDetailModal: React.FC<CertificateDetailModalProps> = ({
           </div>
         </div>
 
+        {/* In-Modal Direct Editor (when isEditing is true) */}
+        {isEditing && (
+          <div className="p-4 bg-amber-50/90 border border-amber-300 rounded-xl space-y-3 print:hidden text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                <Edit3 className="w-4 h-4 text-amber-700" />
+                <span>Edit Certificate Recipient & Institutional Content</span>
+              </span>
+              <span className="text-[11px] text-amber-800">
+                Changes update the live certificate preview below and save to registry
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Recipient Student Name</label>
+                <input
+                  type="text"
+                  value={editForm.recipientName}
+                  onChange={(e) => setEditForm({ ...editForm, recipientName: e.target.value })}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Student Roll No / ID</label>
+                <input
+                  type="text"
+                  value={editForm.recipientRollNo}
+                  onChange={(e) => setEditForm({ ...editForm, recipientRollNo: e.target.value })}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">University / Institution Name</label>
+                <input
+                  type="text"
+                  value={editForm.recipientInstitution}
+                  onChange={(e) => setEditForm({ ...editForm, recipientInstitution: e.target.value })}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Event / Competition Title</label>
+                <input
+                  type="text"
+                  value={editForm.eventTitle}
+                  onChange={(e) => setEditForm({ ...editForm, eventTitle: e.target.value })}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Role / Participation Category</label>
+                <select
+                  value={editForm.role}
+                  onChange={(e) => setEditForm({ ...editForm, role: e.target.value as CertificateRole })}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium"
+                >
+                  <option value="Participant">Participant</option>
+                  <option value="Winner - 1st Place">Winner - 1st Place</option>
+                  <option value="Runner Up - 2nd Place">Runner Up - 2nd Place</option>
+                  <option value="2nd Runner Up - 3rd Place">2nd Runner Up - 3rd Place</option>
+                  <option value="Merit Award">Merit Award</option>
+                  <option value="Organizing Committee">Organizing Committee</option>
+                </select>
+              </div>
+
+              {templates.length > 0 && (
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Visual Template</label>
+                  <select
+                    value={editForm.templateId}
+                    onChange={(e) => setEditForm({ ...editForm, templateId: e.target.value })}
+                    className="w-full p-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium"
+                  >
+                    {templates.map(tpl => (
+                      <option key={tpl.id} value={tpl.id}>
+                        {tpl.name} ({tpl.departmentTheme})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Citation Statement Prose</label>
+              <textarea
+                rows={2}
+                value={editForm.citation}
+                onChange={(e) => setEditForm({ ...editForm, citation: e.target.value })}
+                className="w-full p-2 bg-white border border-slate-300 rounded-lg text-slate-900"
+              />
+            </div>
+          </div>
+        )}
+
         {/* Certificate Scaled Canvas Container */}
         <div className="p-3 bg-slate-100/70 rounded-xl border border-slate-200/80 overflow-hidden shadow-inner flex items-center justify-center print:p-0 print:border-none print:shadow-none print:bg-transparent">
           <div className="w-full">
             <CertificateRenderer
-              certificate={certificate}
-              template={template}
+              certificate={activeCertificate}
+              template={activeTemplate}
               containerId="printable-certificate"
               isInteractive={true}
               onQrClick={() => onVerify(certificate.id)}
