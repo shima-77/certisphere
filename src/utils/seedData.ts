@@ -15,7 +15,7 @@ export const INITIAL_INSTITUTION: InstitutionProfile = {
   accreditation: "NAAC A+ Accredited · UGC Category-1 Deemed to be University · NBA Approved",
   authorizedAdmin: "Dr. K.V. Krishna Kishore, Dean of Academic Affairs",
   adminEmail: "dean_academics@vignan.ac.in",
-  verificationBaseUrl: window.location.origin,
+  verificationBaseUrl: typeof window !== 'undefined' ? window.location.origin : (process.env.APP_URL || 'https://certisphere-eij8.onrender.com'),
   logoShield: "apex"
 };
 
@@ -405,10 +405,11 @@ export const SAMPLE_VIGNAN_PRESETS = {
       templateId: "tpl-cse",
       cryptographicHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       issuerAuthority: "VFSTR Academic Assessment Board · School of Computing",
-      publicVerificationUrl: `${window.location.origin}/?verify=CERT-2026-VFSTR-9F83A2`,
-      qrPayload: `${window.location.origin}/?verify=CERT-2026-VFSTR-9F83A2`,
+      publicVerificationUrl: `https://certisphere-eij8.onrender.com/?verify=CERT-2026-VFSTR-9F83A2`,
+      qrPayload: `https://certisphere-eij8.onrender.com/?verify=CERT-2026-VFSTR-9F83A2`,
       downloadsCount: 1,
       verificationsCount: 3
     }
   ]
 };
+

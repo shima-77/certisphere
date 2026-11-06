@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Building2, 
   KeyRound, 
@@ -23,7 +23,13 @@ import {
   Edit2,
   RotateCcw,
   Save,
-  Check
+  Check,
+  Eye,
+  EyeOff,
+  UserPlus,
+  ShieldCheck,
+  Settings,
+  AlertCircle
 } from 'lucide-react';
 import { 
   InstitutionalEvent, 
@@ -31,7 +37,8 @@ import {
   CertificateRecord, 
   CertificateTemplate, 
   AttendanceStatus,
-  CertificateRole 
+  CertificateRole,
+  FacultyCoordinator
 } from '../types';
 import { exportAttendanceToExcel } from '../utils/excelExport';
 
@@ -66,10 +73,60 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
   onOpenDistributionModal,
   onInspectCertificate
 }) => {
-  // Coordinator Authentication State (persisted across tab switches & page refreshes)
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('certisphere_coordinator_auth') === 'true';
-  });
+  // Coordinator Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [activeCoordinator, setActiveCoordinator] = useState<FacultyCoordinator | null>(null);
+  const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
+
+  // Sign In Form States
+  const [loginEmail, setLoginEmail] = useState<string>('coordinator.cse@vignan.ac.in');
+  const [loginPassword, setLoginPassword] = useState<string>('Vignan@2026');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string>('');
+  const [authSuccess, setAuthSuccess] = useState<string>('');
+
+  // Register Form States
+  const [regName, setRegName] = useState<string>('');
+  const [regEmail, setRegEmail] = useState<string>('');
+  const [regDepartment, setRegDepartment] = useState<string>('CSE');
+  const [regFacultyId, setRegFacultyId] = useState<string>('');
+  const [regPassword, setRegPassword] = useState<string>('');
+  const [showRegPassword, setShowRegPassword] = useState<boolean>(false);
+
+  // Change Password Modal State
+  const [showPasswordModal, setShowPasswordModal] = useState<boolean>(false);
+  const [currentPassword, setCurrentPassword] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [passwordModalError, setPasswordModalError] = useState<string>('');
+  const [passwordModalSuccess, setPasswordModalSuccess] = useState<string>('');
+  const [isChangingPassword, setIsChangingPassword] = useState<boolean>(false);
+
+  // Email Config Modal State
+  const [showEmailConfigModal, setShowEmailConfigModal] = useState<boolean>(false);
+  const [emailProvider, setEmailProvider] = useState<'brevo' | 'resend' | 'smtp'>('brevo');
+  const [emailApiKey, setEmailApiKey] = useState<string>('');
+  const [emailSenderAddress, setEmailSenderAddress] = useState<string>('shimaferheenshaik@gmail.com');
+  const [emailSenderName, setEmailSenderName] = useState<string>('VFSTR Academic Coordination Registry');
+  const [emailSmtpHost, setEmailSmtpHost] = useState<string>('smtp.gmail.com');
+  const [emailSmtpPort, setEmailSmtpPort] = useState<number>(587);
+  const [emailSmtpUser, setEmailSmtpUser] = useState<string>('');
+  const [emailSmtpPass, setEmailSmtpPass] = useState<string>('');
+  const [testEmailAddress, setTestEmailAddress] = useState<string>('shimaferheenshaik@gmail.com');
+  const [isTestingEmail, setIsTestingEmail] = useState<boolean>(false);
+  const [isSavingEmailConfig, setIsSavingEmailConfig] = useState<boolean>(false);
+  const [emailNotice, setEmailNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  // Session & Roster Management State
+  const [selectedEventId, setSelectedEventId] = useState<string>(events[0]?.id || '');
+  const [filterAttendance, setFilterAttendance] = useState<'ALL' | 'PRESENT' | 'ABSENT' | 'PENDING'>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isFullscreenCode, setIsFullscreenCode] = useState<boolean>(false);
+  const [isReissuing, setIsReissuing] = useState<boolean>(false);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
+  // Participant Editing Modal
   const [editingParticipant, setEditingParticipant] = useState<ParticipantRecord | null>(null);
   const [editStudentForm, setEditStudentForm] = useState({
     name: '',
@@ -80,20 +137,8 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
     section: '',
     role: 'Participant' as CertificateRole
   });
-  const [coordinatorName, setCoordinatorName] = useState<string>(() => localStorage.getItem('certisphere_coordinator_name') || 'Dr. K.V. Krishna Kishore');
-  const [coordinatorDept, setCoordinatorDept] = useState<string>(() => localStorage.getItem('certisphere_coordinator_dept') || 'CSE');
-  const [loginEmail, setLoginEmail] = useState<string>(() => localStorage.getItem('certisphere_coordinator_email') || 'coordinator.cse@vignan.ac.in');
-  const [loginPin, setLoginPin] = useState<string>('');
-  const [authError, setAuthError] = useState<string>('');
 
-  const [selectedEventId, setSelectedEventId] = useState<string>(events[0]?.id || '');
-  const [isFullscreenCode, setIsFullscreenCode] = useState<boolean>(false);
-  const [filterAttendance, setFilterAttendance] = useState<'ALL' | 'PRESENT' | 'ABSENT' | 'PENDING'>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [isReissuing, setIsReissuing] = useState<boolean>(false);
-  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
-
-  // Preset Coordinator Quick Profiles
+  // Preset Coordinator Quick Profiles (Demo Accounts)
   const PRESET_COORDINATORS = [
     { name: 'Dr. K.V. Krishna Kishore', dept: 'CSE', email: 'coordinator.cse@vignan.ac.in', title: 'Dean of Academic Affairs' },
     { name: 'Dr. D. Venkatesulu', dept: 'AIML', email: 'coordinator.aiml@vignan.ac.in', title: 'Head of AIML & VIIC' },
@@ -101,28 +146,283 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
     { name: 'Dr. N. Veeranjaneyulu', dept: 'IT', email: 'coordinator.it@vignan.ac.in', title: 'Head of IT' }
   ];
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Verify stored session token on mount
+  useEffect(() => {
+    const token = localStorage.getItem('certisphere_auth_token');
+    if (token) {
+      fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.coordinator) {
+          setActiveCoordinator(data.coordinator);
+          setIsAuthenticated(true);
+        } else {
+          localStorage.removeItem('certisphere_auth_token');
+          setIsAuthenticated(false);
+        }
+      })
+      .catch(() => {
+        setIsAuthenticated(false);
+      });
+    }
+
+    // Load server email configuration
+    fetch('/api/email/config')
+      .then(res => res.json())
+      .then(cfg => {
+        if (cfg) {
+          if (cfg.provider) setEmailProvider(cfg.provider);
+          if (cfg.senderEmail) setEmailSenderAddress(cfg.senderEmail);
+          if (cfg.senderName) setEmailSenderName(cfg.senderName);
+          if (cfg.smtpHost) setEmailSmtpHost(cfg.smtpHost);
+          if (cfg.smtpPort) setEmailSmtpPort(cfg.smtpPort);
+        }
+      })
+      .catch(err => console.error('Failed to load email config:', err));
+  }, []);
+
+  // Update selected event if empty
+  useEffect(() => {
+    if (!selectedEventId && events.length > 0) {
+      setSelectedEventId(events[0].id);
+    }
+  }, [events, selectedEventId]);
+
+  // Handle Faculty Login
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (!loginEmail.trim()) {
-      setAuthError('Please enter coordinator faculty email.');
+    setAuthSuccess('');
+    setIsSubmittingAuth(true);
+
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: loginEmail.trim(),
+          password: loginPassword
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Invalid credentials.');
+      }
+
+      localStorage.setItem('certisphere_auth_token', data.token);
+      setActiveCoordinator(data.coordinator);
+      setIsAuthenticated(true);
+      setAuthSuccess(`Welcome, ${data.coordinator.name}! Session authenticated.`);
+    } catch (err: any) {
+      setAuthError(err.message || 'Login failed.');
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  // Handle Faculty Registration
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+    setIsSubmittingAuth(true);
+
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: regName.trim(),
+          email: regEmail.trim(),
+          department: regDepartment.trim(),
+          facultyId: regFacultyId.trim(),
+          password: regPassword
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Registration failed.');
+      }
+
+      localStorage.setItem('certisphere_auth_token', data.token);
+      setActiveCoordinator(data.coordinator);
+      setIsAuthenticated(true);
+      setAuthSuccess(`Registration successful! Welcome, ${data.coordinator.name}.`);
+    } catch (err: any) {
+      setAuthError(err.message || 'Registration failed.');
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  // Handle Sign Out
+  const handleSignOut = async () => {
+    const token = localStorage.getItem('certisphere_auth_token');
+    if (token) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } catch (err) {
+        console.error('Logout error:', err);
+      }
+    }
+    localStorage.removeItem('certisphere_auth_token');
+    setActiveCoordinator(null);
+    setIsAuthenticated(false);
+  };
+
+  // Handle Change Password Submission
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordModalError('');
+    setPasswordModalSuccess('');
+
+    if (newPassword !== confirmPassword) {
+      setPasswordModalError('New passwords do not match.');
       return;
     }
-    const currentSavedPin = localStorage.getItem('certisphere_coordinator_pin') || '1234';
-    if (!loginPin.trim()) {
-      setAuthError('Coordinator PIN is required to access sensitive session records.');
+
+    if (newPassword.length < 6) {
+      setPasswordModalError('New password must be at least 6 characters long.');
       return;
     }
-    if (loginPin.trim() !== currentSavedPin && loginPin.trim() !== 'admin' && loginPin.trim() !== 'vfstr') {
-      setAuthError('Invalid coordinator security PIN.');
+
+    setIsChangingPassword(true);
+    const token = localStorage.getItem('certisphere_auth_token');
+
+    try {
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to change password.');
+      }
+
+      setPasswordModalSuccess('Password successfully updated in security registry!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setShowPasswordModal(false);
+        setPasswordModalSuccess('');
+      }, 2000);
+    } catch (err: any) {
+      setPasswordModalError(err.message || 'Password update failed.');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  // Handle Save Email Settings
+  const handleSaveEmailConfig = async () => {
+    setIsSavingEmailConfig(true);
+    setEmailNotice(null);
+
+    try {
+      const payload: any = {
+        provider: emailProvider,
+        senderEmail: emailSenderAddress.trim(),
+        senderName: emailSenderName.trim(),
+        apiKey: emailApiKey.trim() || undefined
+      };
+
+      if (emailProvider === 'smtp') {
+        payload.smtpHost = emailSmtpHost.trim();
+        payload.smtpPort = Number(emailSmtpPort);
+        payload.smtpUser = emailSmtpUser.trim();
+        payload.smtpPass = emailSmtpPass.trim() || undefined;
+      }
+
+      const response = await fetch('/api/email/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to save configuration');
+
+      setEmailNotice({
+        type: 'success',
+        message: '✓ Email provider settings saved permanently to server database!'
+      });
+    } catch (err: any) {
+      setEmailNotice({
+        type: 'error',
+        message: `Error saving settings: ${err.message}`
+      });
+    } finally {
+      setIsSavingEmailConfig(false);
+    }
+  };
+
+  // Handle Send Diagnostic Test Email
+  const handleSendTestEmail = async () => {
+    if (!testEmailAddress.trim()) {
+      setEmailNotice({ type: 'error', message: 'Please enter a destination email address for the test.' });
       return;
     }
-    // Persist authenticated session across tabs and refreshes
-    localStorage.setItem('certisphere_coordinator_auth', 'true');
-    localStorage.setItem('certisphere_coordinator_email', loginEmail.trim());
-    localStorage.setItem('certisphere_coordinator_name', coordinatorName);
-    localStorage.setItem('certisphere_coordinator_dept', coordinatorDept);
-    setIsAuthenticated(true);
+
+    setIsTestingEmail(true);
+    setEmailNotice(null);
+
+    try {
+      const customConfig: any = {
+        provider: emailProvider,
+        senderEmail: emailSenderAddress.trim(),
+        senderName: emailSenderName.trim(),
+        apiKey: emailApiKey.trim() || undefined
+      };
+
+      if (emailProvider === 'smtp') {
+        customConfig.smtpHost = emailSmtpHost.trim();
+        customConfig.smtpPort = Number(emailSmtpPort);
+        customConfig.smtpUser = emailSmtpUser.trim();
+        customConfig.smtpPass = emailSmtpPass.trim() || undefined;
+      }
+
+      const response = await fetch('/api/email/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetEmail: testEmailAddress.trim(),
+          customConfig
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.diagnosis || data.error || 'Delivery test failed');
+      }
+
+      setEmailNotice({
+        type: 'success',
+        message: `✓ Real Email Delivered via ${data.provider}! Verified message ID: ${data.messageId}. Check ${testEmailAddress} (including spam/promotions)!`
+      });
+    } catch (err: any) {
+      setEmailNotice({
+        type: 'error',
+        message: `Test Failed: ${err.message}`
+      });
+    } finally {
+      setIsTestingEmail(false);
+    }
   };
 
   const currentEvent = events.find(e => e.id === selectedEventId) || events[0];
@@ -150,7 +450,7 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
   const pendingCount = currentParticipants.filter(p => p.attendanceStatus === 'PENDING' || !p.attendanceStatus).length;
   const issuedCount = currentParticipants.filter(p => p.issueStatus === 'ISSUED').length;
 
-  // Handle Trigger Re-Issue / Update with immediate UI feedback
+  // Handle Trigger Re-Issue
   const handleTriggerReissue = async () => {
     if (!currentEvent) return;
     setIsReissuing(true);
@@ -161,17 +461,17 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
       } else {
         await onGenerateCertificatesForEvent(currentEvent.id);
       }
-      setActionFeedback(`✓ Successfully re-issued and updated all certificates with the latest university name and template!`);
+      setActionFeedback(`✓ Successfully re-issued and updated all certificates with the latest university template!`);
       setTimeout(() => setActionFeedback(null), 6000);
     } catch (err: any) {
       console.error('Error during certificate re-issuance:', err);
-      setActionFeedback(`Notice: Certificates update finished.`);
+      setActionFeedback(`Notice: Certificate synchronization completed.`);
     } finally {
       setIsReissuing(false);
     }
   };
 
-  // Handle Trigger Bulk Issue with immediate UI feedback
+  // Handle Bulk Issue
   const handleTriggerBulkIssue = async () => {
     if (!currentEvent) return;
     setIsReissuing(true);
@@ -196,108 +496,269 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
     });
   };
 
-  // 1. If not authenticated, render Coordinator Login Screen
+  // ==========================================
+  // VIEW 1: AUTHENTICATION SCREEN (SIGN IN / REGISTER)
+  // ==========================================
   if (!isAuthenticated) {
     return (
-      <div className="max-w-md mx-auto py-10 px-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm">
+      <div className="max-w-xl mx-auto py-10 px-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
           
-          <div className="flex items-center justify-center w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl mx-auto mb-4 border border-indigo-200">
+          <div className="flex items-center justify-center w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl mx-auto border border-indigo-200">
             <Building2 className="w-6 h-6" />
           </div>
 
-          <div className="text-center mb-6">
+          <div className="text-center space-y-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded">
-              VFSTR FACULTY PORTAL
+              VFSTR FACULTY & COORDINATOR REGISTRY
             </span>
-            <h1 className="text-xl font-extrabold text-slate-900 mt-2">
-              Event Coordinator Sign-In
+            <h1 className="text-2xl font-extrabold text-slate-900">
+              Institutional Coordinator Portal
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Access live session controls, broadcast event codes, verify attendance, and trigger certificate dispatch.
+            <p className="text-xs text-slate-500">
+              Secure authentication for faculty event directors, accreditation officers, and department heads.
             </p>
           </div>
 
-          {/* Quick Demo Profile Selector */}
-          <div className="mb-5">
-            <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-2">
-              Select Demo Faculty Profile:
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {PRESET_COORDINATORS.map((coord) => (
-                <button
-                  key={coord.dept}
-                  type="button"
-                  onClick={() => {
-                    setCoordinatorName(coord.name);
-                    setCoordinatorDept(coord.dept);
-                    setLoginEmail(coord.email);
-                                      }}
-                  className={`p-2 rounded-lg border text-left transition-all text-xs cursor-pointer ${
-                    coordinatorDept === coord.dept
-                      ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-semibold'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="font-bold truncate">{coord.dept} Coordinator</div>
-                  <div className="text-[10px] text-slate-500 truncate">{coord.name}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-4 text-xs">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Faculty / Institutional Email
-              </label>
-              <input
-                type="email"
-                required
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="coordinator@vignan.ac.in"
-                className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 text-xs"
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="font-semibold text-slate-700">
-                  Coordinator Access PIN
-                </label>
-                
-              </div>
-              <input
-                type="password"
-                value={loginPin}
-                onChange={(e) => setLoginPin(e.target.value)}
-                placeholder="Enter secure Coordinator PIN"
-                className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 text-xs"
-              />
-            </div>
-
-            {authError && (
-              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs">
-                {authError}
-              </div>
-            )}
+          {/* Tab Switcher: Sign In vs Register */}
+          <div className="flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => { setAuthMode('signin'); setAuthError(''); setAuthSuccess(''); }}
+              className={`flex-1 py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                authMode === 'signin'
+                  ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Faculty Sign In</span>
+            </button>
 
             <button
-              type="submit"
-              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+              type="button"
+              onClick={() => { setAuthMode('register'); setAuthError(''); setAuthSuccess(''); }}
+              className={`flex-1 py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                authMode === 'register'
+                  ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <KeyRound className="w-4 h-4" />
-              <span>Authorize & Enter Session Room</span>
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Register New Coordinator</span>
             </button>
-          </form>
+          </div>
 
+          {/* Quick Demo Faculty Profiles (For Immediate Testing & Evaluation) */}
+          {authMode === 'signin' && (
+            <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-indigo-950 uppercase tracking-wide">
+                  Demo Faculty Credentials (Click to Load):
+                </span>
+                <span className="text-[10px] text-indigo-600 font-mono font-medium">Password: Vignan@2026</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {PRESET_COORDINATORS.map((coord) => (
+                  <button
+                    key={coord.dept}
+                    type="button"
+                    onClick={() => {
+                      setLoginEmail(coord.email);
+                      setLoginPassword('Vignan@2026');
+                      setAuthError('');
+                    }}
+                    className={`p-2 rounded-lg border text-left transition-all text-xs cursor-pointer ${
+                      loginEmail === coord.email
+                        ? 'border-indigo-600 bg-white text-indigo-950 font-bold shadow-xs'
+                        : 'border-slate-200 bg-white/70 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="truncate font-bold text-[11px]">{coord.dept} Coordinator</div>
+                    <div className="text-[10px] text-slate-500 truncate">{coord.name}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {authError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{authError}</span>
+            </div>
+          )}
+
+          {authSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+              <span>{authSuccess}</span>
+            </div>
+          )}
+
+          {/* Form: Sign In */}
+          {authMode === 'signin' ? (
+            <form onSubmit={handleLogin} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Faculty Institutional Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="coordinator.cse@vignan.ac.in"
+                  className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 font-medium text-xs transition-colors"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="font-semibold text-slate-700">
+                    Coordinator Password
+                  </label>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Enter coordinator password"
+                    className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 font-medium text-xs pr-10 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingAuth}
+                className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>{isSubmittingAuth ? 'Verifying Credentials...' : 'Sign In as Faculty Coordinator'}</span>
+              </button>
+            </form>
+          ) : (
+            /* Form: Register New Coordinator */
+            <form onSubmit={handleRegister} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Full Name & Academic Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={regName}
+                  onChange={(e) => setRegName(e.target.value)}
+                  placeholder="e.g. Dr. A. Sharma, Associate Professor"
+                  className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Institutional Email
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    placeholder="faculty@vignan.ac.in"
+                    className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Department
+                  </label>
+                  <select
+                    value={regDepartment}
+                    onChange={(e) => setRegDepartment(e.target.value)}
+                    className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 text-xs cursor-pointer font-semibold"
+                  >
+                    <option value="CSE">CSE (Computer Science)</option>
+                    <option value="AIML">AIML (AI & Machine Learning)</option>
+                    <option value="ROBOTICS">Robotics & Automation</option>
+                    <option value="IT">IT (Information Technology)</option>
+                    <option value="ECE">ECE (Electronics & Comm)</option>
+                    <option value="BIOTECH">Biotechnology</option>
+                    <option value="MECHANICAL">Mechanical Engineering</option>
+                    <option value="MANAGEMENT">School of Management</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Faculty Employee ID
+                </label>
+                <input
+                  type="text"
+                  value={regFacultyId}
+                  onChange={(e) => setRegFacultyId(e.target.value)}
+                  placeholder="e.g. VF-FAC-2045"
+                  className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Create Secure Password (min 6 characters)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showRegPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="Set coordinator password"
+                    className="w-full py-2.5 px-3 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white rounded-lg outline-none text-slate-900 text-xs pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPassword(!showRegPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingAuth}
+                className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] mt-2"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>{isSubmittingAuth ? 'Registering Account...' : 'Create Coordinator Account'}</span>
+              </button>
+            </form>
+          )}
+
+          <div className="text-[11px] text-slate-500 text-center border-t border-slate-100 pt-3">
+            Protected by PBKDF2 SHA-512 cryptographic password hashing and token-based institutional authorization.
+          </div>
         </div>
       </div>
     );
   }
 
-  // 2. Fullscreen Projector Modal for the Secret Code
+  // ==========================================
+  // VIEW 2: FULLSCREEN CODE PROJECTOR MODE
+  // ==========================================
   if (isFullscreenCode && currentEvent) {
     return (
       <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col items-center justify-center p-8 select-none">
@@ -334,8 +795,8 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
             <span>·</span>
             <span>VENUE: {currentEvent.venue}</span>
             <span>·</span>
-            <span className={currentEvent.isRegistrationLocked ? 'text-rose-400' : 'text-emerald-400'}>
-              {currentEvent.isRegistrationLocked ? 'LOCKED' : 'OPEN FOR CHECK-IN'}
+            <span className={currentEvent.isRegistrationLocked ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+              {currentEvent.isRegistrationLocked ? 'REGISTRATION LOCKED' : 'OPEN FOR LIVE CHECK-IN'}
             </span>
           </div>
         </div>
@@ -343,23 +804,29 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
     );
   }
 
-  // 3. Authenticated Coordinator Dashboard & Live Roster
+  // ==========================================
+  // VIEW 3: AUTHENTICATED COORDINATOR PORTAL
+  // ==========================================
   return (
     <div className="space-y-6 pb-12">
       
-      {/* Coordinator Top Control Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Top Coordinator Command & Security Bar */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-              COORDINATOR ACTIVE SESSION
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+              <span>COORDINATOR VERIFIED SESSION</span>
             </span>
-            <span className="text-xs text-slate-500 font-medium">
-              {coordinatorName} ({coordinatorDept})
+            <span className="text-xs text-slate-700 font-semibold">
+              {activeCoordinator?.name} ({activeCoordinator?.department})
+            </span>
+            <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+              · {activeCoordinator?.email}
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1">
-            Live Event Session Room & Attendance Desk
+            Live Session Management & Certificate Dispatch Desk
           </h1>
         </div>
 
@@ -377,24 +844,54 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
             ))}
           </select>
 
+          {/* Email & SMTP Hub Modal Trigger */}
+          <button
+            onClick={() => setShowEmailConfigModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
+            title="Configure Real Email Dispatch (Brevo / Resend / SMTP)"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Email & SMTP Hub</span>
+          </button>
+
+          {/* Change Password Modal Trigger */}
+          <button
+            onClick={() => setShowPasswordModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors cursor-pointer"
+            title="Update coordinator security credentials"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-slate-500" />
+            <span>Change Password</span>
+          </button>
+
+          {/* Projector Code Button */}
           <button
             onClick={() => setIsFullscreenCode(true)}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors cursor-pointer"
             title="Open Fullscreen Code for Projector"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span>Project Code</span>
           </button>
 
+          {/* Sign Out */}
           <button
-            onClick={() => { localStorage.removeItem('certisphere_coordinator_auth'); setIsAuthenticated(false); }}
-            className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+            onClick={handleSignOut}
+            className="flex items-center gap-1 px-3 py-2 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Sign Out</span>
           </button>
         </div>
       </div>
+
+      {/* Action Feedback Banner */}
+      {actionFeedback && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in">
+          <span>{actionFeedback}</span>
+          <button onClick={() => setActionFeedback(null)} className="text-slate-400 hover:text-slate-600 font-bold">×</button>
+        </div>
+      )}
 
       {currentEvent ? (
         <>
@@ -418,7 +915,7 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
                 </h2>
                 
                 <p className="text-xs text-indigo-200 max-w-xl leading-relaxed">
-                  Students join in real-time by entering the code below. Coordinators verify attendance and classify merit/participation before issuing certificates.
+                  Students join in real-time by entering the access code below. Faculty coordinators verify attendance and classify merit/participation before dispatching certificates.
                 </p>
               </div>
 
@@ -457,510 +954,527 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({
               </div>
 
             </div>
+          </div>
 
-            {/* Template Selector & University Brand Strip */}
-            <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-indigo-200 font-semibold flex items-center gap-1.5">
-                  <Award className="w-3.5 h-3.5 text-indigo-300" />
-                  <span>Certificate Template:</span>
-                </span>
-                <select
-                  value={currentEvent.templateId}
-                  onChange={(e) => onUpdateEventTemplate && onUpdateEventTemplate(currentEvent.id, e.target.value)}
-                  className="bg-indigo-950/90 text-white border border-indigo-400/50 rounded-lg px-2.5 py-1 text-xs outline-none cursor-pointer font-medium"
-                >
-                  {templates.map(tpl => (
-                    <option key={tpl.id} value={tpl.id}>
-                      {tpl.name} ({tpl.departmentTheme})
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+              <div className="text-xs text-slate-500 font-medium">Total Registered</div>
+              <div className="text-2xl font-black text-slate-900 mt-1">{currentParticipants.length}</div>
+            </div>
 
-              <div className="text-indigo-200 text-[11px] flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-amber-300" />
-                <span>University Header:</span>
-                <strong className="text-white font-semibold">
-                  {templates.find(t => t.id === currentEvent.templateId)?.institutionName || 'University Institution'}
-                </strong>
-              </div>
+            <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-xs">
+              <div className="text-xs text-emerald-700 font-medium">Verified Present</div>
+              <div className="text-2xl font-black text-emerald-700 mt-1">{presentCount}</div>
+            </div>
+
+            <div className="bg-white border border-rose-200 rounded-xl p-4 shadow-xs">
+              <div className="text-xs text-rose-700 font-medium">Marked Absent</div>
+              <div className="text-2xl font-black text-rose-700 mt-1">{absentCount}</div>
+            </div>
+
+            <div className="bg-white border border-indigo-200 rounded-xl p-4 shadow-xs">
+              <div className="text-xs text-indigo-700 font-medium">Certificates Issued</div>
+              <div className="text-2xl font-black text-indigo-700 mt-1">{issuedCount}</div>
             </div>
           </div>
 
-          {/* Real-Time Live Statistics Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {/* Action Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
             
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-              <div className="text-xs text-slate-500 font-medium">Logged Participants</div>
-              <div className="text-2xl font-bold font-mono text-slate-900 mt-1">
-                {currentParticipants.length}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Students submitted code</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleMarkAllPresent}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                ✓ Mark All Present
+              </button>
+
+              <button
+                onClick={handleTriggerBulkIssue}
+                disabled={isReissuing}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <Award className="w-3.5 h-3.5" />
+                <span>{isReissuing ? 'Processing...' : `Issue Certificates for Present (${presentCount})`}</span>
+              </button>
+
+              <button
+                onClick={() => onOpenDistributionModal(currentEvent.id)}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Dispatch Emails Hub</span>
+              </button>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-              <div className="text-xs text-slate-500 font-medium flex items-center justify-between">
-                <span>Present Verified</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              </div>
-              <div className="text-2xl font-bold font-mono text-emerald-600 mt-1">
-                {presentCount}
-              </div>
-              <div className="text-[11px] text-emerald-600/80 mt-0.5">Eligible for certificates</div>
-            </div>
+            <div className="flex items-center gap-2">
+              {/* Search Filter */}
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search student or roll no..."
+                className="py-1.5 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:border-indigo-600"
+              />
 
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-              <div className="text-xs text-slate-500 font-medium flex items-center justify-between">
-                <span>Absent / Pending</span>
-                <XCircle className="w-4 h-4 text-amber-500" />
-              </div>
-              <div className="text-2xl font-bold font-mono text-slate-900 mt-1">
-                {absentCount + pendingCount}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">{pendingCount} pending coordinator check</div>
-            </div>
+              {/* Attendance Filter */}
+              <select
+                value={filterAttendance}
+                onChange={(e) => setFilterAttendance(e.target.value as any)}
+                className="py-1.5 px-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold outline-none cursor-pointer"
+              >
+                <option value="ALL">All ({currentParticipants.length})</option>
+                <option value="PRESENT">Present ({presentCount})</option>
+                <option value="ABSENT">Absent ({absentCount})</option>
+                <option value="PENDING">Pending ({pendingCount})</option>
+              </select>
 
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-              <div className="text-xs text-slate-500 font-medium flex items-center justify-between">
-                <span>Certificates Issued</span>
-                <Award className="w-4 h-4 text-indigo-600" />
-              </div>
-              <div className="text-2xl font-bold font-mono text-indigo-600 mt-1">
-                {issuedCount}
-              </div>
-              <div className="text-[11px] text-indigo-600/80 mt-0.5">SHA-256 sealed & ready</div>
+              <button
+                onClick={() => exportAttendanceToExcel(currentEvent, currentParticipants)}
+                className="p-1.5 text-slate-600 hover:text-slate-900 border border-slate-300 rounded-lg bg-slate-50 hover:bg-slate-100 cursor-pointer"
+                title="Export Roster to Excel / CSV"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              </button>
             </div>
-
           </div>
 
-          {/* Live Excel-Style Roster & Management Desk */}
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            
-            {/* Table Toolbar */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <span>Live Student Attendance Roster</span>
-                  <span className="text-xs font-mono font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                    {filteredParticipants.length} Records
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Verify presence with the toggle button, classify prize/merit winners, and export as Excel spreadsheet.
-                </p>
-              </div>
-
-              {/* Action Buttons: Mark All, Export Excel, Generate */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={handleMarkAllPresent}
-                  className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                  title="Mark all pending students as Present"
-                >
-                  Mark All Present
-                </button>
-
-                <button
-                  onClick={() => exportAttendanceToExcel(currentEvent, currentParticipants)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
-                  title="Download clean Excel .CSV spreadsheet"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Download Excel Sheet</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isReissuing}
-                  onClick={handleTriggerBulkIssue}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-                  title="Generate certificates only for students marked Present"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
-                  <span>Bulk Issue Certificates ({presentCount})</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isReissuing}
-                  onClick={handleTriggerReissue}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-amber-950 bg-amber-100 hover:bg-amber-200 border-2 border-amber-400 rounded-lg transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
-                  title="Update and re-issue all certificates with latest university name, template, and student names"
-                >
-                  <RotateCcw className={`w-3.5 h-3.5 text-amber-800 ${isReissuing ? 'animate-spin' : ''}`} />
-                  <span>{isReissuing ? 'Updating...' : `Re-Issue / Update All Certificates (${issuedCount || presentCount})`}</span>
-                </button>
-
-                <button
-                  onClick={() => onOpenDistributionModal(currentEvent.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                  title="Automated email distribution"
-                >
-                  <Send className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Email Dispatch</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Live Feedback Banner */}
-            {actionFeedback && (
-              <div className="mx-4 mt-3 p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs font-semibold flex items-center justify-between shadow-xs animate-in fade-in slide-in-from-top-1">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>{actionFeedback}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActionFeedback(null)}
-                  className="text-emerald-700 hover:text-emerald-900 font-bold ml-2 cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
-            {/* Filters Bar */}
-            <div className="p-3 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-600">Attendance Filter:</span>
-                <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
-                  {(['ALL', 'PRESENT', 'ABSENT', 'PENDING'] as const).map(tab => (
-                    <button
-                      key={tab}
-                      onClick={() => setFilterAttendance(tab)}
-                      className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer ${
-                        filterAttendance === tab
-                          ? 'bg-indigo-600 text-white font-semibold shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search name, roll no, or email..."
-                  className="py-1 px-3 bg-white border border-slate-200 rounded-lg outline-none text-xs w-56 text-slate-800"
-                />
-              </div>
-            </div>
-
-            {/* Excel-Style Table */}
+          {/* Live Participant Roster Table */}
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-100/80 border-b border-slate-200 text-slate-600 font-semibold font-mono text-[11px]">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200">
                   <tr>
-                    <th className="py-2.5 px-3">#</th>
-                    <th className="py-2.5 px-3">Roll No</th>
-                    <th className="py-2.5 px-3">Student Name & Email</th>
-                    <th className="py-2.5 px-3">Dept · Year · Sec</th>
-                    <th className="py-2.5 px-3 text-center">Attendance Verification</th>
-                    <th className="py-2.5 px-3">Certificate Category</th>
-                    <th className="py-2.5 px-3 text-right">Certificate ID / Action</th>
+                    <th className="py-3 px-4">Student Details</th>
+                    <th className="py-3 px-4">Roll Number</th>
+                    <th className="py-3 px-4">Department / Year</th>
+                    <th className="py-3 px-4">Attendance</th>
+                    <th className="py-3 px-4">Conferred Role</th>
+                    <th className="py-3 px-4">Certificate ID</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredParticipants.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-500">
-                        <div className="max-w-sm mx-auto space-y-2">
-                          <Users className="w-8 h-8 mx-auto text-slate-300" />
-                          <div className="font-semibold text-slate-700">No participants logged yet</div>
-                          <p className="text-xs text-slate-400">
-                            Ask students to open the <strong>Student Live Check-In</strong> tab and enter session code <strong>{currentEvent.accessCode || currentEvent.code}</strong>.
-                          </p>
-                        </div>
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
+                        No students found matching current filter or search criteria.
                       </td>
                     </tr>
                   ) : (
-                    filteredParticipants.map((p, idx) => {
-                      const isPresent = p.attendanceStatus === 'PRESENT';
-                      const isAbsent = p.attendanceStatus === 'ABSENT';
-                      const isPending = !p.attendanceStatus || p.attendanceStatus === 'PENDING';
+                    filteredParticipants.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{p.name}</div>
+                          <div className="text-[11px] text-slate-400">{p.email}</div>
+                        </td>
 
-                      return (
-                        <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="py-3 px-3 font-mono text-[11px] text-slate-400">
-                            {idx + 1}
-                          </td>
+                        <td className="py-3 px-4 font-mono font-semibold text-slate-800">
+                          {p.rollNo}
+                        </td>
 
-                          {/* Roll No */}
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900">
-                            {p.rollNo}
-                          </td>
+                        <td className="py-3 px-4 text-slate-600">
+                          <div>{p.department || currentEvent.department}</div>
+                          <div className="text-[10px] text-slate-400">{p.yearOfStudy || '3rd Year'}</div>
+                        </td>
 
-                          {/* Name & Email */}
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-900">{p.name}</span>
-                              <button
-                                onClick={() => {
-                                  setEditingParticipant(p);
-                                  setEditStudentForm({
-                                    name: p.name,
-                                    rollNo: p.rollNo,
-                                    email: p.email,
-                                    department: p.department || '',
-                                    yearOfStudy: p.yearOfStudy || '',
-                                    section: p.section || '',
-                                    role: p.role
-                                  });
-                                }}
-                                className="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-                                title="Edit Student Name & Roll No"
-                              >
-                                <Edit2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                            <div className="text-[11px] text-slate-500 font-mono">{p.email}</div>
-                          </td>
+                        <td className="py-3 px-4">
+                          <button
+                            onClick={() => onToggleAttendance(p.id, p.attendanceStatus === 'PRESENT' ? 'ABSENT' : 'PRESENT')}
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all ${
+                              p.attendanceStatus === 'PRESENT'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
+                                : p.attendanceStatus === 'ABSENT'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100'
+                                : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'
+                            }`}
+                          >
+                            {p.attendanceStatus === 'PRESENT' ? '✓ PRESENT' : p.attendanceStatus === 'ABSENT' ? '✗ ABSENT' : '⏳ PENDING'}
+                          </button>
+                        </td>
 
-                          {/* Academic Context */}
-                          <td className="py-3 px-3 text-slate-700">
-                            <div className="font-medium">{p.department || 'CSE'}</div>
-                            <div className="text-[11px] text-slate-400">
-                              {p.yearOfStudy || '3rd Year'} · {p.section || 'Sec A'}
-                            </div>
-                          </td>
+                        <td className="py-3 px-4">
+                          <select
+                            value={p.role || 'Participant'}
+                            onChange={(e) => onUpdateRole(p.id, e.target.value as any)}
+                            className="py-1 px-2 text-xs bg-slate-50 border border-slate-300 rounded font-medium cursor-pointer"
+                          >
+                            <option value="Participant">Participant</option>
+                            <option value="Winner - 1st Place">Winner - 1st Place</option>
+                            <option value="Runner Up - 2nd Place">Runner Up - 2nd Place</option>
+                            <option value="2nd Runner Up - 3rd Place">3rd Place</option>
+                            <option value="Merit Award">Merit Award</option>
+                            <option value="Keynote Speaker">Speaker / Mentor</option>
+                            <option value="Organizing Committee">Organizing Committee</option>
+                          </select>
+                        </td>
 
-                          {/* Present / Absent Toggle Buttons */}
-                          <td className="py-3 px-3 text-center">
-                            <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
-                              <button
-                                onClick={() => onToggleAttendance(p.id, 'PRESENT')}
-                                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
-                                  isPresent
-                                    ? 'bg-emerald-600 text-white shadow-xs'
-                                    : 'text-slate-600 hover:text-emerald-700'
-                                }`}
-                              >
-                                <CheckCircle2 className="w-3 h-3" />
-                                <span>Present</span>
-                              </button>
-
-                              <button
-                                onClick={() => onToggleAttendance(p.id, 'ABSENT')}
-                                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
-                                  isAbsent
-                                    ? 'bg-rose-600 text-white shadow-xs'
-                                    : 'text-slate-600 hover:text-rose-700'
-                                }`}
-                              >
-                                <XCircle className="w-3 h-3" />
-                                <span>Absent</span>
-                              </button>
-                            </div>
-                            {isPending && (
-                              <div className="text-[10px] text-amber-600 font-medium mt-0.5">
-                                Pending Check
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Role Selector: Participation vs Merit */}
-                          <td className="py-3 px-3">
-                            <select
-                              value={p.role}
-                              onChange={(e) => onUpdateRole(p.id, e.target.value as CertificateRole)}
-                              className="py-1 px-2 text-xs font-medium bg-slate-50 border border-slate-300 rounded outline-none cursor-pointer text-slate-800"
+                        <td className="py-3 px-4 font-mono text-xs">
+                          {p.certificateId ? (
+                            <button
+                              onClick={() => onInspectCertificate(p.certificateId!)}
+                              className="text-indigo-600 hover:text-indigo-800 hover:underline font-bold"
                             >
-                              <option value="Participant">Participation Certificate</option>
-                              <option value="Winner - 1st Place">Merit Award - 1st Place</option>
-                              <option value="Runner Up - 2nd Place">Merit Award - 2nd Place</option>
-                              <option value="2nd Runner Up - 3rd Place">Merit Award - 3rd Place</option>
-                              <option value="Merit Award">Special Merit Award</option>
-                              <option value="Organizing Committee">Organizing Committee</option>
-                            </select>
-                          </td>
+                              {p.certificateId}
+                            </button>
+                          ) : (
+                            <span className="text-slate-400 text-[11px]">Not Issued Yet</span>
+                          )}
+                        </td>
 
-                          {/* Certificate Status / Inspect */}
-                          <td className="py-3 px-3 text-right">
-                            {p.certificateId ? (
-                              <button
-                                onClick={() => onInspectCertificate(p.certificateId!)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-mono font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded transition-colors cursor-pointer"
-                              >
-                                <QrCode className="w-3 h-3 text-indigo-600" />
-                                <span>{p.certificateId.substring(0, 14)}...</span>
-                              </button>
-                            ) : isPresent ? (
-                              <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-medium">
-                                Ready to Issue
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-slate-400">
-                                Marked Absent
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
+                        <td className="py-3 px-4 text-right">
+                          {p.certificateId && (
+                            <button
+                              onClick={() => onInspectCertificate(p.certificateId!)}
+                              className="p-1 text-slate-500 hover:text-indigo-600 cursor-pointer"
+                              title="View & Verify Certificate"
+                            >
+                              <Award className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
             </div>
+          </div>
+        </>
+      ) : (
+        <div className="p-8 text-center bg-white border border-slate-200 rounded-xl text-slate-500">
+          No events created yet. Please create an event first.
+        </div>
+      )}
 
-            {/* Table Footer */}
-            <div className="p-3 bg-slate-50/70 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
-              <div>
-                Auto-saved real-time attendance ledger. Only students with <strong>Present</strong> status receive verifiable certificates.
-              </div>
+      {/* ==========================================
+          MODAL 1: CHANGE COORDINATOR PASSWORD
+         ========================================== */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-bold text-slate-900">Change Coordinator Password</h3>
+              </div>
+              <button onClick={() => setShowPasswordModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Update your faculty password. Credentials are securely encrypted with PBKDF2 SHA-512.
+            </p>
+
+            {passwordModalError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs">
+                {passwordModalError}
+              </div>
+            )}
+
+            {passwordModalSuccess && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs">
+                {passwordModalSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Current Password</label>
+                <input
+                  type="password"
+                  required
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Enter current password"
+                  className="w-full py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg outline-none text-slate-900 focus:border-indigo-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">New Password (min 6 chars)</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  className="w-full py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg outline-none text-slate-900 focus:border-indigo-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Confirm New Password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-type new password"
+                  className="w-full py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg outline-none text-slate-900 focus:border-indigo-600"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
                 <button
-                  onClick={() => exportAttendanceToExcel(currentEvent, currentParticipants)}
-                  className="font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg cursor-pointer"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export .CSV</span>
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isChangingPassword}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-lg cursor-pointer"
+                >
+                  {isChangingPassword ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================
+          MODAL 2: EMAIL PROVIDER & SMTP CONFIG HUB
+         ========================================== */}
+      {showEmailConfigModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Email Dispatcher & SMTP Settings</h3>
+                  <p className="text-[11px] text-slate-500">Configure real email delivery with official PDF attachments</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEmailConfigModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            {emailNotice && (
+              <div className={`p-3 rounded-xl text-xs flex items-center justify-between ${
+                emailNotice.type === 'success'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border border-rose-200 text-rose-800'
+              }`}>
+                <span>{emailNotice.message}</span>
+                <button onClick={() => setEmailNotice(null)} className="font-bold ml-2">×</button>
+              </div>
+            )}
+
+            {/* Provider Selector Tabs */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">Select Email Delivery Provider:</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEmailProvider('brevo')}
+                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                    emailProvider === 'brevo'
+                      ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 font-bold shadow-xs'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-xs">Brevo API ⭐</div>
+                  <div className="text-[10px] text-slate-500 font-normal mt-0.5">Recommended for Render (Free, 300/day)</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEmailProvider('resend')}
+                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                    emailProvider === 'resend'
+                      ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 font-bold shadow-xs'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-xs">Resend API</div>
+                  <div className="text-[10px] text-slate-500 font-normal mt-0.5">HTTPS Cloud API</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEmailProvider('smtp')}
+                  className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                    emailProvider === 'smtp'
+                      ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 font-bold shadow-xs'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-xs">Gmail / SMTP</div>
+                  <div className="text-[10px] text-slate-500 font-normal mt-0.5">Custom Mail Server</div>
                 </button>
               </div>
             </div>
 
-          </div>
-        </>
-      ) : (
-        <div className="p-8 bg-white border border-slate-200 rounded-xl text-center text-slate-500">
-          No events found. Please create an event in the Events tab.
-        </div>
-      )}
+            {/* Provider Setup Fields */}
+            <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+              {emailProvider === 'brevo' && (
+                <>
+                  <div className="text-[11px] text-slate-600 bg-indigo-50/70 p-2.5 rounded-lg border border-indigo-100">
+                    💡 <strong>Render Free Tier Note:</strong> Render blocks outbound SMTP ports 25, 465, and 587. 
+                    <strong>Brevo HTTP API</strong> works 100% on Render Free without port blocks! 
+                    Get a free API key at <a href="https://app.brevo.com/settings/keys/api" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-bold">brevo.com</a>.
+                  </div>
 
-      {/* Student Edit Modal */}
-      {editingParticipant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Edit2 className="w-4 h-4 text-indigo-600" />
-                <span>Edit Student & Certificate Details</span>
-              </h3>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Brevo API Key (starts with xkeysib-)</label>
+                    <input
+                      type="password"
+                      value={emailApiKey}
+                      onChange={(e) => setEmailApiKey(e.target.value)}
+                      placeholder="Paste your Brevo API Key"
+                      className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 focus:border-indigo-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Sender Email (verified in your Brevo account)</label>
+                    <input
+                      type="email"
+                      value={emailSenderAddress}
+                      onChange={(e) => setEmailSenderAddress(e.target.value)}
+                      placeholder="e.g. shimaferheenshaik@gmail.com"
+                      className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 focus:border-indigo-600"
+                    />
+                  </div>
+                </>
+              )}
+
+              {emailProvider === 'resend' && (
+                <>
+                  <div className="text-[11px] text-slate-600 bg-indigo-50/70 p-2.5 rounded-lg border border-indigo-100">
+                    💡 <strong>Resend API Key:</strong> Get your key at <a href="https://resend.com/api-keys" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-bold">resend.com</a>.
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Resend API Key (starts with re_)</label>
+                    <input
+                      type="password"
+                      value={emailApiKey}
+                      onChange={(e) => setEmailApiKey(e.target.value)}
+                      placeholder="re_..."
+                      className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 focus:border-indigo-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Sender Email</label>
+                    <input
+                      type="text"
+                      value={emailSenderAddress}
+                      onChange={(e) => setEmailSenderAddress(e.target.value)}
+                      placeholder="onboarding@resend.dev (or verified domain)"
+                      className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 focus:border-indigo-600"
+                    />
+                  </div>
+                </>
+              )}
+
+              {emailProvider === 'smtp' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">SMTP Host</label>
+                      <input
+                        type="text"
+                        value={emailSmtpHost}
+                        onChange={(e) => setEmailSmtpHost(e.target.value)}
+                        placeholder="smtp.gmail.com"
+                        className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">SMTP Port</label>
+                      <input
+                        type="number"
+                        value={emailSmtpPort}
+                        onChange={(e) => setEmailSmtpPort(Number(e.target.value))}
+                        placeholder="587 or 465"
+                        className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">SMTP Username / Email</label>
+                      <input
+                        type="email"
+                        value={emailSmtpUser}
+                        onChange={(e) => setEmailSmtpUser(e.target.value)}
+                        placeholder="your-email@gmail.com"
+                        className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">16-Letter Google App Password</label>
+                      <input
+                        type="password"
+                        value={emailSmtpPass}
+                        onChange={(e) => setEmailSmtpPass(e.target.value)}
+                        placeholder="16-character App Password"
+                        className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Sender Name (Shown in Recipient Inbox)</label>
+                <input
+                  type="text"
+                  value={emailSenderName}
+                  onChange={(e) => setEmailSenderName(e.target.value)}
+                  placeholder="VFSTR Academic Coordination Registry"
+                  className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 focus:border-indigo-600"
+                />
+              </div>
+
               <button
-                onClick={() => setEditingParticipant(null)}
-                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded"
+                type="button"
+                onClick={handleSaveEmailConfig}
+                disabled={isSavingEmailConfig}
+                className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold rounded-lg cursor-pointer transition-all shadow-xs"
               >
-                ✕
+                {isSavingEmailConfig ? 'Saving Settings...' : 'Save Settings to Server Database'}
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Student Full Name (Prints on Certificate)</label>
-                <input
-                  type="text"
-                  value={editStudentForm.name}
-                  onChange={(e) => setEditStudentForm({ ...editStudentForm, name: e.target.value })}
-                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  placeholder="e.g. Shaik Aalima Akmal"
-                />
+            {/* Test Email Verification Box */}
+            <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950 uppercase tracking-wide">
+                <Send className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Send Real-Time Diagnostic Test Email</span>
               </div>
 
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Roll Number / Student ID</label>
-                <input
-                  type="text"
-                  value={editStudentForm.rollNo}
-                  onChange={(e) => setEditStudentForm({ ...editStudentForm, rollNo: e.target.value })}
-                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  placeholder="e.g. 241FA18351"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Email Address</label>
+              <div className="flex gap-2">
                 <input
                   type="email"
-                  value={editStudentForm.email}
-                  onChange={(e) => setEditStudentForm({ ...editStudentForm, email: e.target.value })}
-                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  placeholder="student@vignan.ac.in"
+                  value={testEmailAddress}
+                  onChange={(e) => setTestEmailAddress(e.target.value)}
+                  placeholder="Enter your personal email to receive test PDF certificate"
+                  className="flex-1 py-2 px-3 bg-white border border-slate-300 rounded-lg outline-none text-xs text-slate-900"
                 />
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={editStudentForm.department}
-                    onChange={(e) => setEditStudentForm({ ...editStudentForm, department: e.target.value })}
-                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Year</label>
-                  <input
-                    type="text"
-                    value={editStudentForm.yearOfStudy}
-                    onChange={(e) => setEditStudentForm({ ...editStudentForm, yearOfStudy: e.target.value })}
-                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Section</label>
-                  <input
-                    type="text"
-                    value={editStudentForm.section}
-                    onChange={(e) => setEditStudentForm({ ...editStudentForm, section: e.target.value })}
-                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Certificate Award Role</label>
-                <select
-                  value={editStudentForm.role}
-                  onChange={(e) => setEditStudentForm({ ...editStudentForm, role: e.target.value as CertificateRole })}
-                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-medium text-slate-900"
+                <button
+                  type="button"
+                  onClick={handleSendTestEmail}
+                  disabled={isTestingEmail}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-lg text-xs cursor-pointer shadow-xs whitespace-nowrap"
                 >
-                  <option value="Participant">Participation Certificate</option>
-                  <option value="Winner - 1st Place">Merit Award - 1st Place</option>
-                  <option value="Runner Up - 2nd Place">Merit Award - 2nd Place</option>
-                  <option value="2nd Runner Up - 3rd Place">Merit Award - 3rd Place</option>
-                  <option value="Merit Award">Special Merit Award</option>
-                  <option value="Organizing Committee">Organizing Committee</option>
-                </select>
+                  {isTestingEmail ? 'Sending Test...' : 'Send Test Email 🚀'}
+                </button>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setEditingParticipant(null)}
-                className="px-3.5 py-1.5 text-xs text-slate-600 hover:text-slate-800 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!onUpdateParticipant) return;
-                  const updated: ParticipantRecord = {
-                    ...editingParticipant,
-                    name: editStudentForm.name.trim() || editingParticipant.name,
-                    rollNo: editStudentForm.rollNo.trim() || editingParticipant.rollNo,
-                    email: editStudentForm.email.trim() || editingParticipant.email,
-                    department: editStudentForm.department,
-                    yearOfStudy: editStudentForm.yearOfStudy,
-                    section: editStudentForm.section,
-                    role: editStudentForm.role
-                  };
-                  onUpdateParticipant(updated);
-                  setEditingParticipant(null);
-                }}
-                className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>Save Student & Update Certificate</span>
-              </button>
-            </div>
           </div>
         </div>
       )}

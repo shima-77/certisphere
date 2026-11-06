@@ -96,6 +96,22 @@ export default function App() {
     localStorage.setItem('certisphere_vfstr_v3_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
+  // Initial sync with backend database registry
+  useEffect(() => {
+    fetch('/api/sync')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (data.events && data.events.length > 0) setEvents(data.events);
+          if (data.participants && data.participants.length > 0) setParticipants(data.participants);
+          if (data.certificates && data.certificates.length > 0) setCertificates(data.certificates);
+          if (data.auditLogs && data.auditLogs.length > 0) setAuditLogs(data.auditLogs);
+        }
+      })
+      .catch(err => console.log('Sync offline fallback to localStorage:', err));
+  }, []);
+
+
   // URL query parameter routing (e.g. ?verify=CERT-XXX or ?student=email)
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -143,6 +159,7 @@ export default function App() {
       isRegistrationLocked: false
     };
     setEvents(prev => [withCode, ...prev]);
+    fetch('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: withCode }) }).catch(() => {});
     addAuditLog('ISSUED', 'EVENT', withCode.id, `Created new institutional event: "${withCode.title}" (${withCode.code}). Access Code: ${withCode.accessCode}`);
   };
 
@@ -189,6 +206,7 @@ export default function App() {
     };
 
     setParticipants(prev => [newParticipant, ...prev]);
+    fetch('/api/participants/check-in', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: event.id, accessCode: event.accessCode, name: studentData.name, rollNo: studentData.rollNo, email: studentData.email, department: studentData.department, yearOfStudy: studentData.yearOfStudy, section: studentData.section }) }).catch(() => {});
 
     // Update event participant count
     setEvents(prev => prev.map(e => e.id === event.id ? {
@@ -208,6 +226,7 @@ export default function App() {
 
   // Coordinator Toggle Attendance Status (Present / Absent)
   const handleToggleAttendance = (participantId: string, status: AttendanceStatus) => {
+    fetch(`/api/participants/${participantId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ attendanceStatus: status }) }).catch(() => {});
     setParticipants(prev => prev.map(p => p.id === participantId ? {
       ...p,
       attendanceStatus: status,
@@ -382,6 +401,8 @@ export default function App() {
 
     // Update state
     setCertificates(prev => [...newCerts, ...prev]);
+    fetch('/api/certificates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ certificates: newCerts }) }).catch(() => {});
+    fetch('/api/certificates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ certificates: newCerts }) }).catch(() => {});
 
     setParticipants(prev => prev.map(p => {
       if (updatedParticipantsMap.has(p.id)) {

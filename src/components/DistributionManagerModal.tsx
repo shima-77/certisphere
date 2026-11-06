@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Send, 
   Mail, 
@@ -7,10 +7,12 @@ import {
   Download, 
   ExternalLink, 
   Eye, 
-  RefreshCw,
-  Sparkles,
-  ShieldCheck,
-  Check
+  RefreshCw, 
+  Sparkles, 
+  ShieldCheck, 
+  Check, 
+  Settings, 
+  AlertCircle 
 } from 'lucide-react';
 import { InstitutionalEvent, ParticipantRecord, CertificateRecord } from '../types';
 
@@ -35,21 +37,108 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
   const [selectedPreviewPart, setSelectedPreviewPart] = useState<ParticipantRecord | null>(participants[0] || null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [dispatchNotice, setDispatchNotice] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
-  
-  // Custom Sender Email & Password inputs right inside the modal
+
+  // Email Provider Configuration
+  const [provider, setProvider] = useState<'brevo' | 'resend' | 'smtp'>('brevo');
+  const [apiKey, setApiKey] = useState<string>('');
   const [senderEmail, setSenderEmail] = useState<string>('shimaferheenshaik@gmail.com');
+  const [senderName, setSenderName] = useState<string>('VFSTR Academic Coordination Registry');
+  const [smtpHost, setSmtpHost] = useState<string>('smtp.gmail.com');
+  const [smtpPort, setSmtpPort] = useState<number>(587);
+  const [smtpUser, setSmtpUser] = useState<string>('');
+  const [smtpPass, setSmtpPass] = useState<string>('');
+  const [hasServerKey, setHasServerKey] = useState<boolean>(false);
+  const [showConfigPanel, setShowConfigPanel] = useState<boolean>(false);
+  const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
+
+  // Direct Live Test Dispatch States
   const [directRecipientEmail, setDirectRecipientEmail] = useState<string>('shimaferheenshaik@gmail.com');
   const [directRecipientName, setDirectRecipientName] = useState<string>('Shima Ferheen');
   const [directRole, setDirectRole] = useState<'Participant' | 'Winner - 1st Place'>('Participant');
   const [isDirectSending, setIsDirectSending] = useState<boolean>(false);
 
+  // Load saved email configuration on mount
+  useEffect(() => {
+    fetch('/api/email/config')
+      .then(res => res.json())
+      .then(cfg => {
+        if (cfg) {
+          if (cfg.provider) setProvider(cfg.provider);
+          if (cfg.senderEmail) setSenderEmail(cfg.senderEmail);
+          if (cfg.senderName) setSenderName(cfg.senderName);
+          if (cfg.smtpHost) setSmtpHost(cfg.smtpHost);
+          if (cfg.smtpPort) setSmtpPort(cfg.smtpPort);
+          setHasServerKey(Boolean(cfg.hasApiKey || cfg.hasSmtpPass));
+        }
+      })
+      .catch(err => console.error('Failed to load email config:', err));
+  }, []);
+
+  // Filter participants: ONLY PRESENT or those with generated certificates
+  const eventParticipants = participants.filter(p => p.eventId === event.id);
+  const presentParticipants = eventParticipants.filter(p => p.attendanceStatus === 'PRESENT' || (p.certificateId && p.attendanceStatus !== 'ABSENT'));
+  const unsentCount = presentParticipants.filter(p => p.dispatchStatus === 'UNSENT' || p.dispatchStatus === 'QUEUED').length;
+  const deliveredCount = presentParticipants.filter(p => p.dispatchStatus === 'DELIVERED').length;
+  const downloadedCount = presentParticipants.filter(p => p.dispatchStatus === 'DOWNLOADED').length;
+
+  // Build custom configuration payload
+  const getActiveConfig = () => {
+    const cfg: any = {
+      provider,
+      senderEmail: senderEmail.trim(),
+      senderName: senderName.trim()
+    };
+    if (apiKey.trim()) cfg.apiKey = apiKey.trim();
+    if (provider === 'smtp') {
+      cfg.smtpHost = smtpHost.trim();
+      cfg.smtpPort = Number(smtpPort);
+      cfg.smtpUser = smtpUser.trim() || senderEmail.trim();
+      if (smtpPass.trim()) cfg.smtpPass = smtpPass.trim();
+    }
+    return cfg;
+  };
+
+  // Save Config to Server
+  const handleSaveConfig = async () => {
+    setIsSavingConfig(true);
+    setDispatchNotice(null);
+    try {
+      const cfg = getActiveConfig();
+      const res = await fetch('/api/email/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save settings');
+      setHasServerKey(true);
+      setDispatchNotice({
+        type: 'success',
+        message: '✓ Email provider settings saved permanently to the server!'
+      });
+    } catch (err: any) {
+      setDispatchNotice({
+        type: 'error',
+        message: `Failed to save configuration: ${err.message}`
+      });
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  // Handle Direct Test Dispatch (Sends 1 live email with attached PDF)
   const handleDirectTestDispatch = async () => {
-    if (!directRecipientEmail.trim()) return;
+    if (!directRecipientEmail.trim()) {
+      setDispatchNotice({ type: 'error', message: 'Please enter a recipient email address.' });
+      return;
+    }
     setIsDirectSending(true);
     setDispatchNotice(null);
 
     try {
       const directCertId = `CERT-VFSTR-${Date.now().toString().slice(-6)}`;
+      const customConfig = getActiveConfig();
+
       const response = await fetch('/api/email/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -65,7 +154,8 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
             }
           ],
           eventTitle: event.title,
-          senderName: `${event.department} Academic Coordinator`
+          senderName: senderName.trim(),
+          customConfig
         })
       });
 
@@ -73,13 +163,13 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
       if (data.sentCount > 0) {
         setDispatchNotice({
           type: 'success',
-          message: `Official ${directRole} Certificate with attached PDF successfully delivered to ${directRecipientEmail}! Check your inbox!`
+          message: `✓ Real Email with Official PDF Attachment successfully delivered to ${directRecipientEmail}! Check your inbox (and spam/promotions)!`
         });
       } else {
-        const err = data.results?.[0]?.error || 'Failed to dispatch email';
+        const err = data.results?.[0]?.error || data.error || 'Delivery failed';
         setDispatchNotice({
           type: 'error',
-          message: `Delivery issue: ${err}`
+          message: `Delivery Error: ${err}`
         });
       }
     } catch (err: any) {
@@ -91,21 +181,12 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
       setIsDirectSending(false);
     }
   };
-  const [senderPass, setSenderPass] = useState<string>('');
-  const [showSmtpSettings, setShowSmtpSettings] = useState<boolean>(false);
 
-  // CRITICAL: Only include participants who are marked PRESENT (exclude ABSENT students)
-  const eventParticipants = participants.filter(p => p.eventId === event.id);
-  const presentParticipants = eventParticipants.filter(p => p.attendanceStatus === 'PRESENT' || (p.certificateId && p.attendanceStatus !== 'ABSENT'));
-  const unsentCount = presentParticipants.filter(p => p.dispatchStatus === 'UNSENT' || p.dispatchStatus === 'QUEUED').length;
-  const deliveredCount = presentParticipants.filter(p => p.dispatchStatus === 'DELIVERED').length;
-  const downloadedCount = presentParticipants.filter(p => p.dispatchStatus === 'DOWNLOADED').length;
-
+  // Handle Bulk Dispatch to all PRESENT participants
   const handleBulkDispatch = async () => {
     setIsDispatching(true);
     setDispatchNotice(null);
 
-    // Filter students who are verified PRESENT and have an email (if unsentCount > 0, pick unsent; otherwise re-send to all present)
     const targetList = unsentCount > 0 
       ? presentParticipants.filter(p => (p.dispatchStatus === 'UNSENT' || p.dispatchStatus === 'QUEUED') && p.email)
       : presentParticipants.filter(p => p.email);
@@ -132,13 +213,7 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
     }
 
     try {
-      const customSmtp = senderPass.trim() ? {
-        host: 'smtp.gmail.com',
-        port: 587,
-        user: senderEmail.trim(),
-        pass: senderPass.trim(),
-        from: `VFSTR Academic Registry <${senderEmail.trim()}>`
-      } : undefined;
+      const customConfig = getActiveConfig();
 
       const response = await fetch('/api/email/dispatch', {
         method: 'POST',
@@ -146,39 +221,32 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
         body: JSON.stringify({
           recipients: recipientsToDispatch,
           eventTitle: event.title,
-          senderName: `${event.department} Academic Coordinator`,
-          customSmtp
+          senderName: senderName.trim(),
+          customConfig
         })
       });
 
       const data = await response.json();
       onDispatchAll(event.id);
 
-      if (data.hasRealSmtp) {
-        const failed = (data.results || []).filter((r: any) => r.status === 'FAILED');
-        if (data.sentCount > 0) {
-          setDispatchNotice({
-            type: 'success',
-            message: `Direct Real Email Sent! Successfully delivered to ${data.sentCount} recipient(s). Check your inbox (and spam/promotions folder)!`
-          });
-        } else if (failed.length > 0) {
-          setDispatchNotice({
-            type: 'error',
-            message: `Delivery Notice: ${failed[0].error || 'Resend test mode only delivers to your registered account email (shimaferheenshaik@gmail.com). Add yourself as a participant to receive the live test email!'}`
-          });
-        }
-      } else {
+      if (data.sentCount > 0) {
         setDispatchNotice({
-          type: 'info',
-          message: `Processed ${data.sentCount} PRESENT students. Enter your 16-letter Gmail App Password in the box below to deliver directly to their real Gmail inboxes!`
+          type: 'success',
+          message: `✓ Real Emails Dispatched! Successfully delivered official PDF certificates to ${data.sentCount} PRESENT students.`
+        });
+      } else {
+        const firstErr = data.results?.find((r: any) => r.status === 'FAILED')?.error || data.error || 'Failed to dispatch emails';
+        setDispatchNotice({
+          type: 'error',
+          message: `Dispatch Issue: ${firstErr}`
         });
       }
     } catch (err: any) {
       console.error('Failed to trigger email API:', err);
       onDispatchAll(event.id);
       setDispatchNotice({
-        type: 'info',
-        message: `Dispatched ${recipientsToDispatch.length} certificates to the delivery queue.`
+        type: 'error',
+        message: `Network error during dispatch: ${err.message}`
       });
     } finally {
       setIsDispatching(false);
@@ -195,13 +263,9 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  const matchedCert = selectedPreviewPart 
-    ? certificates.find(c => c.id === selectedPreviewPart.certificateId)
-    : null;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
         
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -212,28 +276,30 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
                 Automated Certificate Distribution Hub
               </h3>
               <p className="text-xs text-slate-500">
-                Event: {event.title} ({event.code})
+                Event: {event.title} ({event.code}) · PDF Attachments Auto-Generated
               </p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+            className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
           >
             ✕
           </button>
         </div>
 
         {dispatchNotice && (
-          <div className={`p-3 rounded-lg text-xs flex items-center justify-between ${
+          <div className={`p-3.5 rounded-xl text-xs flex items-center justify-between ${
             dispatchNotice.type === 'success' 
               ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' 
+              : dispatchNotice.type === 'error'
+              ? 'bg-rose-50 border border-rose-200 text-rose-800'
               : 'bg-indigo-50 border border-indigo-200 text-indigo-900'
           }`}>
-            <span>{dispatchNotice.message}</span>
+            <span className="font-medium">{dispatchNotice.message}</span>
             <button 
               onClick={() => setDispatchNotice(null)}
-              className="text-slate-400 hover:text-slate-600 font-bold ml-2"
+              className="text-slate-400 hover:text-slate-600 font-bold ml-2 cursor-pointer"
             >
               ×
             </button>
@@ -242,20 +308,20 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
 
         {/* Delivery Metrics Strip */}
         <div className="grid grid-cols-4 gap-3 text-center">
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-            <div className="text-xs text-slate-500">Total Enrolled</div>
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+            <div className="text-xs text-slate-500 font-medium">Total Enrolled</div>
             <div className="text-xl font-bold font-mono text-slate-900 mt-0.5">{eventParticipants.length}</div>
           </div>
-          <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
-            <div className="text-xs text-indigo-700">Pending Dispatch</div>
+          <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+            <div className="text-xs text-indigo-700 font-medium">Pending Dispatch</div>
             <div className="text-xl font-bold font-mono text-indigo-800 mt-0.5">{unsentCount}</div>
           </div>
-          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-            <div className="text-xs text-emerald-700">Delivered</div>
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+            <div className="text-xs text-emerald-700 font-medium">Delivered</div>
             <div className="text-xl font-bold font-mono text-emerald-800 mt-0.5">{deliveredCount}</div>
           </div>
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="text-xs text-amber-700">Downloaded / Verified</div>
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <div className="text-xs text-amber-700 font-medium">Downloaded / Verified</div>
             <div className="text-xl font-bold font-mono text-amber-800 mt-0.5">{downloadedCount}</div>
           </div>
         </div>
@@ -325,233 +391,229 @@ export const DistributionManagerModal: React.FC<DistributionManagerModalProps> =
           </button>
         </div>
 
-        {/* Sender Email & SMTP Configuration Box */}
-        <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl">
-          <div className="flex items-center justify-between mb-2">
+        {/* Sender Email & Provider Configuration Accordion */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Mail className="w-4 h-4 text-indigo-700" />
-              <span className="text-xs font-bold text-indigo-950">Sender Email Configuration (Dispatch as Coordinator)</span>
+              <Settings className="w-4 h-4 text-indigo-700" />
+              <span className="text-xs font-bold text-slate-900">
+                Email Dispatcher Provider ({provider === 'brevo' ? 'Brevo HTTPS API' : provider === 'resend' ? 'Resend API' : 'Custom SMTP'})
+              </span>
+              {hasServerKey && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  ✓ Configured
+                </span>
+              )}
             </div>
             <button
               type="button"
-              onClick={() => setShowSmtpSettings(!showSmtpSettings)}
-              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800"
+              onClick={() => setShowConfigPanel(!showConfigPanel)}
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
             >
-              {showSmtpSettings ? 'Hide Settings' : 'Configure Real Gmail'}
+              {showConfigPanel ? '▲ Collapse Settings' : '▼ Configure Providers & Keys'}
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                Sender Email Address:
-              </label>
-              <input
-                type="email"
-                value={senderEmail}
-                onChange={(e) => setSenderEmail(e.target.value)}
-                placeholder="your-email@gmail.com"
-                className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 text-xs"
-              />
-            </div>
+          {showConfigPanel && (
+            <div className="space-y-3 pt-2 text-xs border-t border-slate-200">
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setProvider('brevo')}
+                  className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                    provider === 'brevo'
+                      ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 font-bold'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  <div className="font-bold text-[11px]">Brevo API ⭐</div>
+                  <div className="text-[9px] text-slate-500">Free, works on Render Free</div>
+                </button>
 
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                Gmail 16-Letter App Password (for instant real delivery):
-              </label>
-              <input
-                type="password"
-                value={senderPass}
-                onChange={(e) => setSenderPass(e.target.value)}
-                placeholder="Paste 16-letter App Password (optional)"
-                className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900 text-xs"
-              />
+                <button
+                  type="button"
+                  onClick={() => setProvider('resend')}
+                  className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                    provider === 'resend'
+                      ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 font-bold'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  <div className="font-bold text-[11px]">Resend API</div>
+                  <div className="text-[9px] text-slate-500">Modern HTTPS API</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProvider('smtp')}
+                  className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                    provider === 'smtp'
+                      ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 font-bold'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  <div className="font-bold text-[11px]">Gmail / SMTP</div>
+                  <div className="text-[9px] text-slate-500">Custom Mail Server</div>
+                </button>
+              </div>
+
+              {provider === 'brevo' && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Brevo API Key (starts with xkeysib-):
+                  </label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="Paste Brevo API Key"
+                    className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900"
+                  />
+                </div>
+              )}
+
+              {provider === 'resend' && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Resend API Key (starts with re_):
+                  </label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="re_..."
+                    className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900"
+                  />
+                </div>
+              )}
+
+              {provider === 'smtp' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-700 mb-1">SMTP Host</label>
+                    <input
+                      type="text"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      placeholder="smtp.gmail.com"
+                      className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-700 mb-1">App Password</label>
+                    <input
+                      type="password"
+                      value={smtpPass}
+                      onChange={(e) => setSmtpPass(e.target.value)}
+                      placeholder="16-letter App Password"
+                      className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Sender Email</label>
+                  <input
+                    type="email"
+                    value={senderEmail}
+                    onChange={(e) => setSenderEmail(e.target.value)}
+                    placeholder="coordinator@vignan.ac.in"
+                    className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Sender Name</label>
+                  <input
+                    type="text"
+                    value={senderName}
+                    onChange={(e) => setSenderName(e.target.value)}
+                    placeholder="VFSTR Registry"
+                    className="w-full py-1.5 px-3 bg-white border border-slate-300 rounded-lg outline-none text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveConfig}
+                disabled={isSavingConfig}
+                className="w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-semibold rounded-lg cursor-pointer"
+              >
+                {isSavingConfig ? 'Saving...' : 'Save Provider Settings to Server'}
+              </button>
             </div>
-          </div>
-          
-          <div className="text-[10px] text-slate-500 mt-2 flex items-center justify-between">
-            <span>Only students marked <strong>PRESENT</strong> ({presentParticipants.length} students) will receive certificates.</span>
-            <span className="text-indigo-700 font-medium">Auto-signed with VFSTR Academic Credentials</span>
-          </div>
+          )}
         </div>
 
-        {/* Two-Column: Dispatch Queue vs. Live Email Preview */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Left Column (6 cols): Participants Queue */}
-          <div className="lg:col-span-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Distribution Queue</span>
-              {unsentCount > 0 ? (
-                <button
-                  onClick={handleBulkDispatch}
-                  disabled={isDispatching}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors cursor-pointer"
-                >
-                  {isDispatching ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Dispatching...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Dispatch {unsentCount} Unsent Emails</span>
-                    </>
-                  )}
-                </button>
+        {/* Two-Column: Distribution Queue & Quick Copy */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700">Present Participants Distribution Queue ({presentParticipants.length})</span>
+            <button
+              onClick={handleBulkDispatch}
+              disabled={isDispatching}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            >
+              {isDispatching ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Dispatching Real Emails...</span>
+                </>
               ) : (
-                <button
-                  onClick={handleBulkDispatch}
-                  disabled={isDispatching}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
-                  title="Re-send email notifications to all PRESENT participants"
-                >
-                  {isDispatching ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Sending...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Re-Send Real Emails ({presentParticipants.length})</span>
-                    </>
-                  )}
-                </button>
+                <>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Dispatch Real Emails to All Present ({presentParticipants.length})</span>
+                </>
               )}
-            </div>
+            </button>
+          </div>
 
-            <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
-              {eventParticipants.map((part) => {
-                const isSelected = selectedPreviewPart?.id === part.id;
+          <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+            {eventParticipants.length === 0 ? (
+              <div className="p-4 text-center text-xs text-slate-400">No participants enrolled in this event.</div>
+            ) : (
+              eventParticipants.map((part) => {
+                const isPresent = part.attendanceStatus === 'PRESENT' || (part.certificateId && part.attendanceStatus !== 'ABSENT');
                 return (
-                  <div 
-                    key={part.id}
-                    onClick={() => setSelectedPreviewPart(part)}
-                    className={`p-3 text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                      isSelected ? 'bg-indigo-50/60' : 'hover:bg-slate-50'
-                    }`}
-                  >
+                  <div key={part.id} className="p-3 flex items-center justify-between hover:bg-slate-50 text-xs">
                     <div>
-                      <div className="font-semibold text-slate-900">{part.name}</div>
-                      <div className="text-[11px] text-slate-500 font-mono">{part.email}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">Roll: {part.rollNo}</div>
+                      <div className="font-bold text-slate-900 flex items-center gap-2">
+                        <span>{part.name}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                          isPresent ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {isPresent ? 'PRESENT' : 'ABSENT / PENDING'}
+                        </span>
+                      </div>
+                      <div className="text-slate-500 text-[11px]">{part.email} · {part.rollNo}</div>
                     </div>
 
-                    <div className="text-right space-y-1">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                        part.dispatchStatus === 'DOWNLOADED'
-                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                          : part.dispatchStatus === 'DELIVERED'
-                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                            : 'bg-slate-100 text-slate-600'
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                        part.dispatchStatus === 'DELIVERED'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : part.dispatchStatus === 'DOWNLOADED'
+                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                          : 'bg-slate-100 text-slate-600'
                       }`}>
                         {part.dispatchStatus}
                       </span>
 
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCopyLink(part);
-                          }}
-                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
-                        >
-                          {copiedLink === part.id ? 'Copied!' : 'Copy Link'}
-                        </button>
-                        {part.dispatchStatus === 'DELIVERED' && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSimulateStudentAction(part.id, 'DOWNLOADED');
-                            }}
-                            className="text-[10px] text-slate-600 hover:text-slate-900"
-                            title="Simulate student downloading certificate from email"
-                          >
-                            Simulate Read
-                          </button>
-                        )}
-                      </div>
+                      <button
+                        onClick={() => handleCopyLink(part)}
+                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold cursor-pointer"
+                        title="Copy direct certificate link"
+                      >
+                        {copiedLink === part.id ? '✓ Copied' : 'Copy Link'}
+                      </button>
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              })
+            )}
           </div>
-
-          {/* Right Column (6 cols): Email Preview Box */}
-          <div className="lg:col-span-6 bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-3 flex flex-col justify-between">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2 flex items-center justify-between">
-                <span>Automated Email Template Preview</span>
-                <span className="font-mono text-emerald-600 font-normal">SECURE DISPATCH</span>
-              </div>
-
-              {selectedPreviewPart ? (
-                <div className="bg-white border border-slate-200 rounded-lg p-4 mt-2 space-y-3 shadow-xs">
-                  <div className="space-y-1 border-b border-slate-100 pb-2 text-[11px]">
-                    <div><strong className="text-slate-600">From:</strong> VFSTR Academic Registry &lt;no-reply@vignan.ac.in&gt;</div>
-                    <div><strong className="text-slate-600">To:</strong> {selectedPreviewPart.name} &lt;{selectedPreviewPart.email}&gt;</div>
-                    <div><strong className="text-slate-600">Subject:</strong> [Vignan University] Official Certificate of {selectedPreviewPart.role}: {event.title}</div>
-                  </div>
-
-                  <div className="space-y-2 text-slate-700 leading-relaxed">
-                    <p>Dear <strong>{selectedPreviewPart.name}</strong>,</p>
-                    <p>
-                      Congratulations! Your official institutional credential for the <strong>{event.title}</strong> has been generated with tamper-proof cryptographic verification.
-                    </p>
-
-                    <div className="p-2.5 bg-slate-50 rounded border border-slate-200 text-[11px] font-mono space-y-0.5">
-                      <div>RECIPIENT ID: {selectedPreviewPart.rollNo}</div>
-                      <div>CREDENTIAL ID: {selectedPreviewPart.certificateId || 'CERT-PENDING-GENERATION'}</div>
-                      <div>ROLE: {selectedPreviewPart.role}</div>
-                    </div>
-
-                    <div className="text-center pt-2">
-                      <a
-                        href={matchedCert ? `/?verify=${matchedCert.id}` : '#'}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          if (selectedPreviewPart.certificateId) {
-                            onSimulateStudentAction(selectedPreviewPart.id, 'DOWNLOADED');
-                          }
-                        }}
-                        className="inline-block px-4 py-2 bg-indigo-600 text-white rounded text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-xs"
-                      >
-                        View & Download Verified Certificate
-                      </a>
-                    </div>
-
-                    <p className="text-[10px] text-slate-500 pt-2 border-t border-slate-100">
-                      You can also verify this credential at any time by scanning the embedded QR code or visiting the Vignan Institutional Verification Portal.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-12 text-center text-slate-400">
-                  Select a participant to preview their personalized notification email.
-                </div>
-              )}
-            </div>
-
-            <div className="text-[10px] text-slate-500 flex items-center justify-between pt-2">
-              <span>Delivery tracking updates in real-time when students open or download credentials.</span>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end pt-3 border-t border-slate-100">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-slate-700 hover:text-slate-900 cursor-pointer"
-          >
-            Close Distribution Hub
-          </button>
         </div>
 
       </div>

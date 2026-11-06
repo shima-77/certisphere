@@ -1,0 +1,159 @@
+{
+  "coordinators": [
+    {
+      "id": "coord-cse",
+      "name": "Dr. K.V. Krishna Kishore",
+      "email": "coordinator.cse@vignan.ac.in",
+      "department": "CSE",
+      "facultyId": "VF-CSE-1001",
+      "role": "DEAN_ADMIN",
+      "salt": "7567d662438b5c937ee2355c108cace7",
+      "passwordHash": "2bb613de329d61b56e6dd02e271085e536934162a5a18891560c6f75e4cdc9531ba5def242ebeb06f29aaaeb17c593f63a5795cc9a3ea2b1ff040dd9f2bb893f",
+      "createdAt": "2026-11-06T14:09:28.096Z"
+    },
+    {
+      "id": "coord-aiml",
+      "name": "Dr. D. Venkatesulu",
+      "email": "coordinator.aiml@vignan.ac.in",
+      "department": "AIML",
+      "facultyId": "VF-AIML-1002",
+      "role": "FACULTY_COORDINATOR",
+      "salt": "5ecba721576dcfe5677c68d6376543e7",
+      "passwordHash": "f29b6b4b59704ab6d59fb9b55279496745f551eddb1e2ba9425fd360b1d52850c9ffaef0746efb5f653a113898595d7a945a3df246ba422c54aa091f3e68f6ea",
+      "createdAt": "2026-11-06T14:09:28.165Z"
+    },
+    {
+      "id": "coord-robotics",
+      "name": "Prof. Marcus Thorne",
+      "email": "coordinator.robotics@vignan.ac.in",
+      "department": "ROBOTICS",
+      "facultyId": "VF-ROB-1003",
+      "role": "FACULTY_COORDINATOR",
+      "salt": "93979f9602ccb723317c7b7cd857319f",
+      "passwordHash": "685c689bc03570358f84803b8f93243ccd0db0ca679a56bd55efd0e49289ef9655d214c000b8aeb5f987939fe3b97df850239a5f208fd8d9212de3f49477f842",
+      "createdAt": "2026-11-06T14:09:28.234Z"
+    },
+    {
+      "id": "coord-it",
+      "name": "Dr. N. Veeranjaneyulu",
+      "email": "coordinator.it@vignan.ac.in",
+      "department": "IT",
+      "facultyId": "VF-IT-1004",
+      "role": "FACULTY_COORDINATOR",
+      "salt": "b3d24a34f79717d50ea7fea7bc9fb8d0",
+      "passwordHash": "1c13b34684afc52dc871230ed1d40f4cd5fb2df33e5d6b92a3294423c8e52d406b3ab51e6795ad92b04037ea290fe73a54efacfd64aa30dbaec86ab5aa9241d9",
+      "createdAt": "2026-11-06T14:09:28.303Z"
+    }
+  ],
+  "sessions": [
+    {
+      "token": "59bca5cd79e6bb093f8bb8b24aa7629f93eae907046275be7d9257ff903721ec",
+      "coordinatorId": "coord-cse",
+      "createdAt": "2026-11-06T14:09:28.379Z",
+      "expiresAt": "2026-11-13T14:09:28.379Z"
+    },
+    {
+      "token": "48c4cbd290191ab4b7b02e8568fbedc98a2daba6b6a28704f54b9bfefc745ead",
+      "coordinatorId": "coord-cse",
+      "createdAt": "2026-11-06T14:31:12.354Z",
+      "expiresAt": "2026-11-13T14:31:12.354Z"
+    }
+  ],
+  "emailConfig": {
+    "provider": "brevo",
+    "senderEmail": "coordinator@vignan.ac.in",
+    "senderName": "VFSTR Coordinator"
+  },
+  "events": [
+    {
+      "id": "evt-mahotsav-2026",
+      "title": "Vignan Mahotsav 2026 - National Technical Symposium & Hackathon",
+      "code": "VFSTR-MAHOTSAV-26",
+      "category": "Hackathon & Competition",
+      "department": "Department of Computer Science & Engineering",
+      "venue": "Vignan Innovation and Incubation Centre (VIIC) & U-Block Auditorium",
+      "startDate": "2026-10-14",
+      "endDate": "2026-10-16",
+      "status": "Ongoing",
+      "coordinator": "Dr. D. Venkatesulu",
+      "coCoordinator": "Dr. K. Venkata Rao",
+      "description": "Annual 36-hour flagship national technical hackathon with tracks in Autonomous AI, Robotics, and Cloud Native Architectures.",
+      "templateId": "tpl-cse",
+      "totalParticipants": 3,
+      "certificatesIssued": 2,
+      "fraudFlagsCount": 0
+    }
+  ],
+  "participants": [
+    {
+      "id": "part-001",
+      "eventId": "evt-mahotsav-2026",
+      "name": "Sai Vardhan Reddy",
+      "email": "saivardhan.22@vignan.ac.in",
+      "rollNo": "221FA04128",
+      "institution": "Vignan's Foundation for Science, Technology & Research (VFSTR)",
+      "role": "Winner - 1st Place",
+      "rank": "1st Place (Grand Prize)",
+      "projectTitle": "Autonomous Edge Drone AI",
+      "attendanceScore": 100,
+      "certificateId": "CERT-2026-VFSTR-9F83A2",
+      "issueStatus": "ISSUED",
+      "dispatchStatus": "DOWNLOADED"
+    },
+    {
+      "id": "part-002",
+      "eventId": "evt-mahotsav-2026",
+      "name": "Bhavana Chowdary",
+      "email": "bhavana.22@vignan.ac.in",
+      "rollNo": "221FA04045",
+      "institution": "Vignan's Foundation for Science, Technology & Research (VFSTR)",
+      "role": "Runner Up - 2nd Place",
+      "rank": "2nd Place",
+      "projectTitle": "Tensor Core Neural Vision",
+      "attendanceScore": 98,
+      "certificateId": "CERT-2026-VFSTR-77D1C4",
+      "issueStatus": "ISSUED",
+      "dispatchStatus": "DELIVERED"
+    },
+    {
+      "id": "part-003",
+      "eventId": "evt-mahotsav-2026",
+      "name": "Shima Ferheen",
+      "email": "shimaferheenshaik@gmail.com",
+      "rollNo": "221FA04190",
+      "institution": "Vignan's Foundation for Science, Technology & Research (VFSTR)",
+      "role": "Participant",
+      "attendanceScore": 92,
+      "issueStatus": "PENDING",
+      "dispatchStatus": "UNSENT"
+    }
+  ],
+  "certificates": [
+    {
+      "id": "CERT-2026-VFSTR-9F83A2",
+      "certificateNumber": "VFSTR/CSE/2026/0142",
+      "eventId": "evt-mahotsav-2026",
+      "eventTitle": "Vignan Mahotsav 2026 - National Technical Symposium & Hackathon",
+      "eventCategory": "Hackathon & Competition",
+      "participantId": "part-001",
+      "recipientName": "Sai Vardhan Reddy",
+      "recipientEmail": "saivardhan.22@vignan.ac.in",
+      "recipientRollNo": "221FA04128",
+      "recipientInstitution": "Vignan's Foundation for Science, Technology & Research (VFSTR)",
+      "role": "Winner - 1st Place",
+      "rank": "1st Place (Grand Prize)",
+      "projectTitle": "Autonomous Edge Drone AI",
+      "citation": "In recognition of outstanding engineering prowess, securing 1st Place in the Vignan Mahotsav Hackathon.",
+      "issueDate": "2026-10-16",
+      "status": "VALID",
+      "templateId": "tpl-cse",
+      "cryptographicHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "issuerAuthority": "VFSTR Academic Assessment Board · School of Computing",
+      "publicVerificationUrl": "https://certisphere-eij8.onrender.com/?verify=CERT-2026-VFSTR-9F83A2",
+      "qrPayload": "https://certisphere-eij8.onrender.com/?verify=CERT-2026-VFSTR-9F83A2",
+      "downloadsCount": 1,
+      "verificationsCount": 3
+    }
+  ],
+  "auditLogs": []
+}

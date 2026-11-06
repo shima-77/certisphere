@@ -6,18 +6,307 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import nodemailer, { Transporter } from 'nodemailer';
 import PDFDocument from 'pdfkit';
+import {
+  initDb,
+  registerCoordinator,
+  loginCoordinator,
+  verifySession,
+  logoutSession,
+  changePassword,
+  listPublicCoordinators,
+  getAllData,
+  upsertEvent,
+  upsertParticipants,
+  updateParticipant,
+  upsertCertificates,
+  getCertificate,
+  appendAuditLog,
+  getEmailConfig,
+  saveEmailConfig
+} from './server/db.js';
+import { ParticipantRecord } from './src/types/index.js';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Initialize persistent database on server boot
+initDb();
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
 
-// Server-side Gemini initialization
+// Auth Middleware
+function requireAuth(req: Request, res: Response, next: any) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required. Please sign in as a faculty coordinator.' });
+  }
+  const coordinator = verifySession(token);
+  if (!coordinator) {
+    return res.status(401).json({ error: 'Session expired or invalid. Please sign in again.' });
+  }
+  (req as any).coordinator = coordinator;
+  next();
+}
+
+// ==========================================
+// 1. AUTHENTICATION & FACULTY COORDINATOR API
+// ==========================================
+
+// Register new faculty coordinator
+app.post('/api/auth/register', (req: Request, res: Response) => {
+  try {
+    const { name, email, department, facultyId, password } = req.body;
+    if (!name || !email || !department || !password) {
+      return res.status(400).json({ error: 'Name, institutional email, department, and password are required.' });
+    }
+    const result = registerCoordinator({ name, email, department, facultyId, password });
+    return res.json({ success: true, ...result });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'Registration failed' });
+  }
+});
+
+// Login faculty coordinator
+app.post('/api/auth/login', (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Faculty email and password are required.' });
+    }
+    const result = loginCoordinator(email, password);
+    return res.json({ success: true, ...result });
+  } catch (err: any) {
+    return res.status(401).json({ error: err.message || 'Authentication failed' });
+  }
+});
+
+// Verify active session & return profile
+app.get('/api/auth/me', requireAuth, (req: Request, res: Response) => {
+  return res.json({ success: true, coordinator: (req as any).coordinator });
+});
+
+// Logout coordinator
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (token) {
+    logoutSession(token);
+  }
+  return res.json({ success: true });
+});
+
+// Change password
+app.post('/api/auth/change-password', requireAuth, (req: Request, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Both current password and new password are required.' });
+    }
+    const coordinator = (req as any).coordinator;
+    changePassword(coordinator.id, currentPassword, newPassword);
+    return res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message || 'Failed to update password' });
+  }
+});
+
+// Public directory of faculty coordinators
+app.get('/api/coordinators', (_req: Request, res: Response) => {
+  return res.json({ coordinators: listPublicCoordinators() });
+});
+
+// ==========================================
+// 2. DATA SYNCHRONIZATION & ENTITY STORAGE
+// ==========================================
+
+// Global synchronization endpoint for frontend state hydration
+app.get('/api/sync', (_req: Request, res: Response) => {
+  try {
+    const data = getAllData();
+    return res.json({ success: true, ...data });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to sync data' });
+  }
+});
+
+// Create or update an institutional event
+app.post('/api/events', (req: Request, res: Response) => {
+  try {
+    const { event } = req.body;
+    if (!event || !event.id) {
+      return res.status(400).json({ error: 'Valid event payload is required.' });
+    }
+    const saved = upsertEvent(event);
+    return res.json({ success: true, event: saved });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Save / bulk update participants
+app.post('/api/participants', (req: Request, res: Response) => {
+  try {
+    const { participants } = req.body;
+    if (!participants || !Array.isArray(participants)) {
+      return res.status(400).json({ error: 'Participants array is required.' });
+    }
+    const saved = upsertParticipants(participants);
+    return res.json({ success: true, count: saved.length });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Update single participant record
+app.put('/api/participants/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    const updated = updateParticipant(id, updates);
+    if (!updated) {
+      return res.status(404).json({ error: 'Participant not found.' });
+    }
+    return res.json({ success: true, participant: updated });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Student Live Check-in endpoint
+app.post('/api/participants/check-in', (req: Request, res: Response) => {
+  try {
+    const { eventId, accessCode, name, rollNo, email, department, yearOfStudy, section } = req.body;
+
+    const allData = getAllData();
+    const event = allData.events.find(e => 
+      e.id === eventId || 
+      (accessCode && (e.accessCode?.trim().toUpperCase() === accessCode.trim().toUpperCase() || e.code?.trim().toUpperCase() === accessCode.trim().toUpperCase()))
+    );
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found or invalid check-in code.' });
+    }
+
+    if (event.isRegistrationLocked) {
+      return res.status(403).json({ error: 'Registration and live check-in for this event is currently closed by the coordinator.' });
+    }
+
+    if (!name || !rollNo || !email) {
+      return res.status(400).json({ error: 'Name, roll number, and email are required.' });
+    }
+
+    const cleanRollNo = rollNo.trim().toUpperCase();
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Check if participant already exists in this event
+    const existing = allData.participants.find(p => 
+      p.eventId === event.id && 
+      (p.rollNo.toUpperCase() === cleanRollNo || p.email.toLowerCase() === cleanEmail)
+    );
+
+    let participant: ParticipantRecord;
+
+    if (existing) {
+      participant = {
+        ...existing,
+        name: name.trim(),
+        rollNo: cleanRollNo,
+        email: cleanEmail,
+        department: department || existing.department,
+        yearOfStudy: yearOfStudy || existing.yearOfStudy,
+        section: section || existing.section,
+        attendanceStatus: 'PRESENT',
+        checkInTimestamp: new Date().toISOString()
+      };
+      updateParticipant(participant.id, participant);
+    } else {
+      participant = {
+        id: `part-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        eventId: event.id,
+        name: name.trim(),
+        rollNo: cleanRollNo,
+        email: cleanEmail,
+        institution: "Vignan's Foundation for Science, Technology & Research (VFSTR)",
+        department: department || event.department,
+        yearOfStudy: yearOfStudy || '3rd Year',
+        section: section || 'Section A',
+        role: 'Participant',
+        attendanceStatus: 'PRESENT',
+        attendanceScore: 100,
+        checkInTimestamp: new Date().toISOString(),
+        issueStatus: 'PENDING',
+        dispatchStatus: 'UNSENT'
+      };
+      upsertParticipants([participant]);
+    }
+
+    appendAuditLog({
+      id: `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      action: 'VERIFIED',
+      entityType: 'EVENT',
+      entityId: event.id,
+      details: `Student ${participant.name} (${participant.rollNo}) verified attendance in "${event.title}".`,
+      actor: participant.name,
+      severity: 'INFO'
+    });
+
+    return res.json({ success: true, participant, event });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Check-in failed' });
+  }
+});
+
+// Save generated certificates to persistent database
+app.post('/api/certificates', (req: Request, res: Response) => {
+  try {
+    const { certificates } = req.body;
+    if (!certificates || !Array.isArray(certificates)) {
+      return res.status(400).json({ error: 'Certificates array is required.' });
+    }
+    const saved = upsertCertificates(certificates);
+    return res.json({ success: true, count: saved.length });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Public certificate verification endpoint (searches persistent database)
+app.get('/api/certificates/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const cert = getCertificate(id);
+    if (!cert) {
+      return res.status(404).json({ success: false, error: 'Certificate record not found in institutional registry.' });
+    }
+    return res.json({ success: true, certificate: cert });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Append to audit logs
+app.post('/api/audit-logs', (req: Request, res: Response) => {
+  try {
+    const { log } = req.body;
+    if (!log) return res.status(400).json({ error: 'Log payload required.' });
+    appendAuditLog(log);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 3. AI STUDIO INTEGRATIONS (GEMINI)
+// ==========================================
+
 const ai = process.env.GEMINI_API_KEY
   ? new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
@@ -29,7 +318,7 @@ const ai = process.env.GEMINI_API_KEY
     })
   : null;
 
-// API: AI Event & Certificate Structure Generator
+// AI Event Wizard
 app.post('/api/ai/event-wizard', async (req: Request, res: Response) => {
   try {
     const { prompt, institutionName } = req.body;
@@ -39,7 +328,6 @@ app.post('/api/ai/event-wizard', async (req: Request, res: Response) => {
     }
 
     if (!ai) {
-      // High-quality deterministic heuristic response if API key is not yet set
       return res.json({
         title: "National Technical Symposium & Hackathon",
         category: "Hackathon & Competition",
@@ -108,7 +396,7 @@ Return ONLY valid JSON matching this schema:
     const parsed = JSON.parse(response.text || '{}');
     return res.json(parsed);
   } catch (error: any) {
-    console.error('Error in event-wizard (falling back to heuristic):', error);
+    console.error('Error in event-wizard:', error);
     const { prompt } = req.body;
     return res.json({
       title: "Vignan Mahotsav - National Technical Hackathon",
@@ -143,7 +431,7 @@ Return ONLY valid JSON matching this schema:
   }
 });
 
-// API: AI Citation & Commendation Generator
+// AI Citation & Commendation Generator
 app.post('/api/ai/citation-generator', async (req: Request, res: Response) => {
   try {
     const { studentName, eventTitle, role, rank, projectTitle, tone } = req.body;
@@ -179,14 +467,11 @@ Output format: JSON with single key "citation" containing the exact string.`,
   }
 });
 
-// API: AI Participant Data Cleaner & Anomaly Detector
+// AI Participant Cleaner
 app.post('/api/ai/data-cleaner', async (req: Request, res: Response) => {
   try {
     const { rawText, existingParticipants = [] } = req.body;
-
-    if (!rawText) {
-      return res.status(400).json({ error: 'rawText is required' });
-    }
+    if (!rawText) return res.status(400).json({ error: 'rawText is required' });
 
     if (!ai) {
       const lines = rawText.split('\n').filter((l: string) => l.trim().length > 0);
@@ -196,30 +481,20 @@ app.post('/api/ai/data-cleaner', async (req: Request, res: Response) => {
         const email = parts[1] || `${name.toLowerCase().replace(/\s+/g, '.')}@institution.edu`;
         const rollNo = parts[2] || `STU-${1000 + index}`;
         const role = parts[3] || 'Participant';
-        return {
-          name,
-          email,
-          rollNo,
-          role,
-          status: 'VALID',
-          anomalyNote: null
-        };
+        return { name, email, rollNo, role, status: 'VALID', anomalyNote: null };
       });
       return res.json({ cleaned: parsed, anomaliesFound: 0 });
     }
 
     const systemInstruction = `You are a strict Institutional Data Cleansing & Fraud Prevention Engine.
-Inspect the provided raw participant list (which may contain messy formatting, typos like "jOHN dOE", invalid emails, duplicate names or IDs, and missing details).
-Also compare against existing enrolled participants to detect duplicate attempts.
-
-Return a JSON object:
+Inspect the provided raw participant list. Return a JSON object with:
 {
   "cleaned": [
     {
-      "name": string (Properly Capitalized Title Case, cleaned),
+      "name": string (Proper Title Case),
       "email": string (standardized lowercase email),
-      "rollNo": string (institutional roll number or ID, standardized),
-      "role": string (e.g. "Participant", "Winner - 1st", "Organizer"),
+      "rollNo": string (institutional roll number or ID),
+      "role": string,
       "status": "VALID" | "SUSPECT_DUPLICATE" | "INVALID_EMAIL" | "FORMAT_CORRECTED",
       "anomalyNote": string | null
     }
@@ -240,7 +515,7 @@ Return a JSON object:
     const parsed = JSON.parse(response.text || '{}');
     return res.json(parsed);
   } catch (error: any) {
-    console.error('Error in data-cleaner (falling back to parser):', error);
+    console.error('Error in data-cleaner:', error);
     const { rawText } = req.body;
     const lines = (rawText || '').split('\n').filter((l: string) => l.trim().length > 0);
     const parsed = lines.map((line: string, index: number) => {
@@ -249,66 +524,51 @@ Return a JSON object:
       const email = parts[1] || `${name.toLowerCase().replace(/\s+/g, '.')}@apex.edu`;
       const rollNo = parts[2] || `APEX-22-CS-${100 + index}`;
       const role = parts[3] || 'Participant';
-      return {
-        name,
-        email: email.toLowerCase(),
-        rollNo: rollNo.toUpperCase(),
-        role,
-        status: 'VALID',
-        anomalyNote: null
-      };
+      return { name, email: email.toLowerCase(), rollNo: rollNo.toUpperCase(), role, status: 'VALID', anomalyNote: null };
     });
     return res.json({ cleaned: parsed, anomaliesFound: 0, summary: `Sanitized and formatted ${parsed.length} student records.` });
   }
 });
 
-// API: AI Institutional Assistant / Audit Agent
+// AI Agent Chat
 app.post('/api/ai/agent-chat', async (req: Request, res: Response) => {
   try {
     const { message, context } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: 'message is required' });
-    }
+    if (!message) return res.status(400).json({ error: 'message is required' });
 
     if (!ai) {
       return res.json({
-        reply: `Institutional Agent Notice: Received your inquiry "${message}". System is monitoring all certificate registries. Currently tracking ${context?.totalCertificates || 0} certificates across ${context?.totalEvents || 0} active institutional events with 100% cryptographic checksum validation.`
+        reply: `Institutional Agent Notice: Received your inquiry "${message}". System is tracking ${context?.totalCertificates || 0} certificates across ${context?.totalEvents || 0} active institutional events with 100% cryptographic checksum validation.`
       });
     }
 
     const systemInstruction = `You are "CertiSphere AI", the autonomous institutional activity & certificate compliance agent.
 You assist university administrators, event organizers, and accreditation officers.
-You can:
-1. Advise on certificate fraud prevention and tamper-proof verification standards.
-2. Formulate event rubrics, certificate criteria, and academic citations.
-3. Help verify audit readiness for NAAC, ABET, NBA, and institutional accreditation.
-4. Execute simulated agent operations (e.g. recommend revoking flagged credentials, suggest certificate batch releases, analyze event participation distributions).
-
 Institutional Context:
 ${JSON.stringify(context || {})}
-
 Keep answers authoritative, precise, concise, and academically professional.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
       contents: message,
-      config: {
-        systemInstruction
-      }
+      config: { systemInstruction }
     });
 
     return res.json({ reply: response.text });
   } catch (error: any) {
-    console.error('Error in agent-chat (falling back):', error);
+    console.error('Error in agent-chat:', error);
     const { message, context } = req.body;
     return res.json({
-      reply: `CertiSphere Compliance Agent Advisory: In response to "${message}": Institutional registry is active with ${context?.totalCertificates || 0} verified certificates across ${context?.totalEvents || 0} events. All issued documents are signed with cryptographic SHA-256 hashes and bound to participant Roll Numbers to prevent unauthorized duplication and forgery.`
+      reply: `CertiSphere Compliance Agent Advisory: In response to "${message}": Institutional registry is active with ${context?.totalCertificates || 0} verified certificates across ${context?.totalEvents || 0} events.`
     });
   }
 });
 
-// API: Real Email Dispatcher for Certificates
+// ==========================================
+// 4. REAL EMAIL DISPATCH & CONFIGURATION HUB
+// ==========================================
+
+// PDF Certificate Generator
 function generatePdfCertificateBuffer({
   name,
   eventTitle,
@@ -447,7 +707,7 @@ function generatePdfCertificateBuffer({
          .fillColor('#475569')
          .text('Dean of Academic Affairs', 60, sigY + 18);
 
-      // Center Gold Seal text
+      // Center Gold Seal
       doc.circle(width / 2, sigY + 15, 24)
          .lineWidth(1.5)
          .stroke('#b45309');
@@ -478,7 +738,7 @@ function generatePdfCertificateBuffer({
       doc.font('Helvetica')
          .fontSize(9)
          .fillColor('#64748b')
-         .text(`Certificate ID: ${certificateId}   ·   Digital SHA-256 Tamper-Proof Verified`, 0, footerY, {
+         .text(`Certificate ID: ${certificateId}   ·   Digital SHA-256 Tamper-Proof Verified   ·   https://certisphere-eij8.onrender.com`, 0, footerY, {
            align: 'center',
            width: width
          });
@@ -490,13 +750,388 @@ function generatePdfCertificateBuffer({
   });
 }
 
+// Generate the HTML email body
+function generateCertificateEmailHtml({
+  name,
+  eventTitle,
+  role,
+  certificateId,
+  orgName,
+  verificationUrl
+}: {
+  name: string;
+  eventTitle: string;
+  role?: string;
+  certificateId: string;
+  orgName: string;
+  verificationUrl: string;
+}): string {
+  const isMerit = Boolean(role && (
+    role.includes('Winner') || 
+    role.includes('Merit') || 
+    role.includes('1st') || 
+    role.includes('2nd') || 
+    role.includes('3rd') || 
+    role.includes('Place')
+  ));
+  const isSpeaker = Boolean(role && (role.includes('Speaker') || role.includes('Mentor')));
+  
+  const certTitle = isMerit 
+    ? `Certificate of Merit` 
+    : isSpeaker 
+      ? `Certificate of Appreciation` 
+      : `Certificate of Participation`;
+
+  const citationText = isMerit
+    ? `In recognition of outstanding performance, technical excellence, and securing <strong>${role}</strong> in <strong>"${eventTitle}"</strong> organized by ${orgName}.`
+    : `for active participation, dedication, and successful completion of all technical sessions in <strong>"${eventTitle}"</strong> conducted at ${orgName}.`;
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+      <div style="border-bottom: 2px solid #1e3a8a; padding-bottom: 14px; margin-bottom: 20px;">
+        <span style="font-size: 11px; font-weight: bold; color: #1e3a8a; letter-spacing: 1.5px; text-transform: uppercase;">${orgName}</span>
+        <h2 style="font-size: 19px; font-weight: bold; color: #0f172a; margin: 6px 0 0 0;">Official Institutional Credential Notification</h2>
+      </div>
+      
+      <p style="font-size: 14px; color: #334155; line-height: 1.6;">Dear <strong>${name}</strong>,</p>
+      
+      <p style="font-size: 14px; color: #334155; line-height: 1.6;">
+        We are pleased to issue your verified digital institutional credential for <strong>"${eventTitle}"</strong>.
+        An official printable PDF certificate is attached directly to this email.
+      </p>
+
+      <div style="background-color: #fffdfa; border: 3px double #b45309; border-radius: 6px; padding: 28px 22px; margin: 24px 0; color: #0f172a; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.06); outline: 4px solid #1e3a8a; outline-offset: -7px;">
+        <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 16px;">
+          <div style="font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #1e3a8a; text-transform: uppercase;">
+            ${orgName}
+          </div>
+          <div style="font-size: 9px; color: #64748b; letter-spacing: 1px; margin-top: 3px;">
+            Deemed to be University · Accredited NAAC A+ · Institution of Excellence
+          </div>
+        </div>
+
+        <div style="font-size: 10px; letter-spacing: 3px; color: #b45309; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">
+          OFFICIAL ACADEMIC CREDENTIAL
+        </div>
+
+        <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 22px; font-weight: bold; color: #0f172a; letter-spacing: 1px; text-transform: uppercase;">
+          ${certTitle}
+        </div>
+
+        <div style="font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 13px; color: #64748b; margin: 14px 0 6px 0;">
+          This is proudly presented to
+        </div>
+
+        <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: bold; color: #1e3a8a; letter-spacing: 0.5px; border-bottom: 2px solid #b45309; display: inline-block; padding: 0 24px 4px 24px; margin-bottom: 14px;">
+          ${name}
+        </div>
+
+        <div style="font-size: 13px; color: #334155; line-height: 1.7; max-width: 480px; margin: 0 auto;">
+          ${citationText}
+        </div>
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 24px; padding-top: 14px; border-top: 1px solid #e2e8f0;">
+          <tr>
+            <td align="left" style="width: 35%; vertical-align: bottom;">
+              <div style="font-family: Georgia, serif; font-size: 15px; color: #1e3a8a; font-weight: bold;">Dr. K.V. Krishna Kishore</div>
+              <div style="border-top: 1px solid #94a3b8; width: 130px; margin-top: 4px; padding-top: 4px; font-size: 9px; font-weight: bold; color: #475569; text-transform: uppercase;">
+                Dean of Academic Affairs
+              </div>
+            </td>
+            <td align="center" style="width: 30%; vertical-align: middle;">
+              <div style="display: inline-block; border: 2px solid #b45309; border-radius: 50%; padding: 8px; width: 52px; height: 52px; text-align: center; background-color: #fef3c7;">
+                <div style="font-size: 8px; font-weight: bold; color: #92400e; text-transform: uppercase; margin-top: 8px; line-height: 1.1;">
+                  VFSTR<br/>SEAL
+                </div>
+              </div>
+            </td>
+            <td align="right" style="width: 35%; vertical-align: bottom;">
+              <div style="font-family: Georgia, serif; font-size: 15px; color: #1e3a8a; font-weight: bold;">Dr. D. Venkatesulu</div>
+              <div style="border-top: 1px solid #94a3b8; width: 130px; margin-top: 4px; padding-top: 4px; font-size: 9px; font-weight: bold; color: #475569; text-transform: uppercase; margin-left: auto;">
+                Head of Department
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <div style="margin-top: 18px; padding: 10px; background-color: #f1f5f9; border-radius: 6px; font-family: monospace; font-size: 11px; color: #475569;">
+          <strong>Certificate ID:</strong> ${certificateId} &nbsp;·&nbsp; <span style="color: #059669; font-weight: bold;">✔ Cryptographic SHA-256 Tamper-Proof</span>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin: 24px 0 16px 0;">
+        <a href="${verificationUrl}" style="background-color: #1e3a8a; color: #ffffff; padding: 13px 28px; font-size: 14px; font-weight: 700; text-decoration: none; border-radius: 8px; display: inline-block; box-shadow: 0 4px 10px rgba(30, 58, 138, 0.25);">
+          📜 Open High-Res Certificate & Verification
+        </a>
+      </div>
+
+      <p style="font-size: 11px; color: #64748b; line-height: 1.5; text-align: center;">
+        Verification Link: <a href="${verificationUrl}" style="color: #4f46e5; word-break: break-all;">${verificationUrl}</a>
+      </p>
+
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px; font-size: 11px; color: #94a3b8; text-align: center;">
+        Issued by Dean of Academic Affairs & Institutional Activity Board<br/>
+        ${orgName}
+      </div>
+    </div>
+  `;
+}
+
+// Single Dispatch Worker Function
+async function sendCertificateEmail({
+  to,
+  name,
+  eventTitle,
+  role,
+  certificateId,
+  orgName,
+  verificationUrl,
+  customConfig
+}: {
+  to: string;
+  name: string;
+  eventTitle: string;
+  role?: string;
+  certificateId: string;
+  orgName: string;
+  verificationUrl: string;
+  customConfig?: any;
+}): Promise<{ messageId: string; provider: string }> {
+  const dbConfig = getEmailConfig();
+
+  // Resolve active provider
+  const provider = customConfig?.provider || dbConfig.provider || (process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'smtp');
+  const apiKey = customConfig?.apiKey || dbConfig.apiKey || (provider === 'brevo' ? process.env.BREVO_API_KEY : process.env.RESEND_API_KEY);
+  const senderEmail = customConfig?.senderEmail || dbConfig.senderEmail || process.env.BREVO_SENDER || process.env.RESEND_FROM || process.env.SMTP_USER || 'shimaferheenshaik@gmail.com';
+  const senderName = customConfig?.senderName || dbConfig.senderName || 'VFSTR Academic Coordination Registry';
+
+  // Generate PDF attachment
+  let pdfBuffer: Buffer | null = null;
+  let pdfBase64: string | null = null;
+  try {
+    pdfBuffer = await generatePdfCertificateBuffer({
+      name,
+      eventTitle,
+      role,
+      certificateId,
+      orgName
+    });
+    pdfBase64 = pdfBuffer.toString('base64');
+  } catch (err) {
+    console.warn('PDF generation failed, dispatching HTML only:', err);
+  }
+
+  const htmlBody = generateCertificateEmailHtml({
+    name,
+    eventTitle,
+    role,
+    certificateId,
+    orgName,
+    verificationUrl
+  });
+
+  const subject = `Official Certificate: ${eventTitle} — ${certificateId}`;
+
+  // 1. BREVO HTTPS API (Most reliable on Render Free tier - no SMTP port blocks, 300 free/day)
+  if (provider === 'brevo' && apiKey) {
+    const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: to, name }],
+        subject,
+        htmlContent: htmlBody,
+        attachment: pdfBase64 ? [
+          {
+            name: `${certificateId}.pdf`,
+            content: pdfBase64
+          }
+        ] : undefined
+      })
+    });
+
+    const data: any = await brevoRes.json();
+    if (!brevoRes.ok) {
+      throw new Error(`Brevo API Error (${brevoRes.status}): ${data?.message || data?.error || 'Unknown Brevo error'}`);
+    }
+    return { messageId: data.messageId || `brevo-${Date.now()}`, provider: 'Brevo API' };
+  }
+
+  // 2. RESEND HTTPS API (Over port 443 - works on cloud hosts)
+  if (provider === 'resend' && apiKey) {
+    const resendRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: `${senderName} <${senderEmail.includes('@') && !senderEmail.includes('resend.dev') ? senderEmail : 'onboarding@resend.dev'}>`,
+        to: [to],
+        subject,
+        html: htmlBody,
+        attachments: pdfBase64 ? [
+          {
+            filename: `${certificateId}.pdf`,
+            content: pdfBase64
+          }
+        ] : undefined
+      })
+    });
+
+    const data: any = await resendRes.json();
+    if (!resendRes.ok) {
+      throw new Error(`Resend API Error (${resendRes.status}): ${data?.message || 'Unknown Resend error'}`);
+    }
+    return { messageId: data.id || `resend-${Date.now()}`, provider: 'Resend API' };
+  }
+
+  // 3. SMTP (Nodemailer for custom mail servers or Gmail App Password)
+  const host = customConfig?.smtpHost || dbConfig.smtpHost || process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(customConfig?.smtpPort || dbConfig.smtpPort || process.env.SMTP_PORT || '587');
+  const user = customConfig?.smtpUser || dbConfig.smtpUser || process.env.SMTP_USER || senderEmail;
+  const pass = customConfig?.smtpPass || dbConfig.smtpPass || process.env.SMTP_PASS;
+
+  if (pass) {
+    let transporter: Transporter;
+    if (host.includes('gmail.com')) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user, pass }
+      });
+    } else {
+      transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+        tls: { rejectUnauthorized: false }
+      });
+    }
+
+    const info = await transporter.sendMail({
+      from: `"${senderName}" <${user}>`,
+      to,
+      subject,
+      html: htmlBody,
+      attachments: pdfBuffer ? [
+        {
+          filename: `${certificateId}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        }
+      ] : undefined
+    });
+
+    return { messageId: info.messageId, provider: 'SMTP' };
+  }
+
+  throw new Error(
+    'No valid email provider configured. Please open Email Settings in the Coordinator Portal to provide a free Brevo API Key (Recommended for Render) or Resend Key.'
+  );
+}
+
+// Get masked email configuration
+app.get('/api/email/config', (_req: Request, res: Response) => {
+  const config = getEmailConfig();
+  return res.json({
+    provider: config.provider || 'brevo',
+    senderEmail: config.senderEmail,
+    senderName: config.senderName,
+    hasApiKey: Boolean(config.apiKey || process.env.BREVO_API_KEY || process.env.RESEND_API_KEY),
+    smtpHost: config.smtpHost || 'smtp.gmail.com',
+    smtpPort: config.smtpPort || 587,
+    hasSmtpPass: Boolean(config.smtpPass || process.env.SMTP_PASS)
+  });
+});
+
+// Save email configuration to database
+app.post('/api/email/config', (req: Request, res: Response) => {
+  try {
+    const { provider, apiKey, senderEmail, senderName, smtpHost, smtpPort, smtpUser, smtpPass } = req.body;
+    const current = getEmailConfig();
+    const updated = saveEmailConfig({
+      provider: provider || current.provider,
+      apiKey: apiKey !== undefined && apiKey !== '' ? apiKey.trim() : current.apiKey,
+      senderEmail: senderEmail ? senderEmail.trim() : current.senderEmail,
+      senderName: senderName ? senderName.trim() : current.senderName,
+      smtpHost: smtpHost ? smtpHost.trim() : current.smtpHost,
+      smtpPort: smtpPort ? parseInt(smtpPort) : current.smtpPort,
+      smtpUser: smtpUser ? smtpUser.trim() : current.smtpUser,
+      smtpPass: smtpPass !== undefined && smtpPass !== '' ? smtpPass.trim() : current.smtpPass
+    });
+    return res.json({ success: true, message: 'Email configuration saved successfully.', config: {
+      provider: updated.provider,
+      senderEmail: updated.senderEmail,
+      senderName: updated.senderName,
+      hasApiKey: Boolean(updated.apiKey),
+      hasSmtpPass: Boolean(updated.smtpPass)
+    } });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Immediate Live Test Email Endpoint
+app.post('/api/email/test', async (req: Request, res: Response) => {
+  try {
+    const { targetEmail, customConfig } = req.body;
+    if (!targetEmail) {
+      return res.status(400).json({ error: 'Target recipient email address is required.' });
+    }
+
+    const testCertId = `CERT-TEST-${Math.floor(100000 + Math.random() * 900000)}`;
+    const orgName = "Vignan's Foundation for Science, Technology & Research (VFSTR)";
+    const verificationUrl = `${process.env.APP_URL || 'https://certisphere-eij8.onrender.com'}/?verify=${testCertId}`;
+
+    const result = await sendCertificateEmail({
+      to: targetEmail.trim(),
+      name: 'Faculty Coordinator (Diagnostic Test)',
+      eventTitle: 'CertiSphere Email Delivery & Protocol Test',
+      role: 'Merit Award (Test)',
+      certificateId: testCertId,
+      orgName,
+      verificationUrl,
+      customConfig
+    });
+
+    return res.json({
+      success: true,
+      message: `Test email with official PDF certificate successfully delivered to ${targetEmail}!`,
+      provider: result.provider,
+      messageId: result.messageId
+    });
+  } catch (err: any) {
+    console.error('Email test failed:', err.message);
+    let diagnosis = err.message;
+    if (err.message.includes('401') || err.message.includes('Key not found') || err.message.includes('unauthorized')) {
+      diagnosis = 'API Key was rejected by the email provider. Please double check that you copied the complete API key.';
+    } else if (err.message.includes('only send testing emails to your own email')) {
+      diagnosis = 'Resend is currently in sandbox mode and only sends to your account email. Switch to Brevo (free, sends to any recipient) or verify a domain in Resend.';
+    } else if (err.message.includes('ETIMEDOUT') || err.message.includes('ECONNREFUSED')) {
+      diagnosis = 'SMTP connection timed out. Free cloud hosts like Render block outbound SMTP ports 25, 465, and 587. Please select Brevo (HTTPS API) which works 100% on Render Free tier!';
+    }
+    return res.status(400).json({
+      success: false,
+      error: err.message,
+      diagnosis
+    });
+  }
+});
+
+// Bulk & Single Email Dispatch Endpoint
 app.post('/api/email/dispatch', async (req: Request, res: Response) => {
   try {
-    const { 
-      recipients, 
-      eventTitle, 
-      senderName, 
+    const {
+      recipients,
+      eventTitle,
+      senderName,
       customSmtp,
+      customConfig,
       institutionName
     } = req.body;
 
@@ -504,302 +1139,69 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Recipients list is required' });
     }
 
-    // Determine SMTP configuration (prioritize custom SMTP from UI coordinator settings, fallback to env vars)
-    const host = customSmtp?.host || process.env.SMTP_HOST;
-    const port = parseInt(customSmtp?.port || process.env.SMTP_PORT || '587');
-    const user = customSmtp?.user || process.env.SMTP_USER;
-    const pass = customSmtp?.pass || process.env.SMTP_PASS;
-    const from = customSmtp?.from || process.env.SMTP_FROM || `${senderName || 'CertiSphere Registry'} <no-reply@vignan.ac.in>`;
-
-    // HTTPS API-based email providers (essential for cloud platforms like Render Free tier that block SMTP ports 587/465)
-    const resendApiKey = process.env.RESEND_API_KEY;
-    const brevoApiKey = process.env.BREVO_API_KEY;
-
-    const hasRealSmtp = Boolean(host && user && pass);
-    const hasHttpEmail = Boolean(resendApiKey || brevoApiKey);
-    const hasRealEmail = hasRealSmtp || hasHttpEmail;
-
-    let transporter: Transporter | null = null;
-    if (hasRealSmtp) {
-      transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: {
-          user,
-          pass,
-        },
-      });
-    }
+    const orgName = institutionName || "Vignan's Foundation for Science, Technology & Research (VFSTR)";
+    const effectiveConfig = customConfig || (customSmtp ? {
+      provider: 'smtp',
+      smtpHost: customSmtp.host,
+      smtpPort: customSmtp.port,
+      smtpUser: customSmtp.user,
+      smtpPass: customSmtp.pass,
+      senderEmail: customSmtp.user,
+      senderName: senderName || 'VFSTR Academic Coordinator'
+    } : undefined);
 
     const dispatchResults = [];
+    let sentCount = 0;
+    let failedCount = 0;
 
     for (const recipient of recipients) {
-      let pdfBuffer: Buffer | null = null;
-      let pdfBase64: string | null = null;
+      const { email, name, certificateId, role, verificationUrl } = recipient;
       try {
-        pdfBuffer = await generatePdfCertificateBuffer({
-          name: recipient.name,
-          eventTitle,
-          role: recipient.role,
-          certificateId: recipient.certificateId,
-          orgName: recipient.recipientInstitution || institutionName || "Vignan's Foundation for Science, Technology & Research (VFSTR)"
+        const result = await sendCertificateEmail({
+          to: email,
+          name,
+          eventTitle: eventTitle || 'Institutional Symposium',
+          role,
+          certificateId: certificateId || `CERT-${Date.now()}`,
+          orgName: recipient.recipientInstitution || orgName,
+          verificationUrl: verificationUrl || `${process.env.APP_URL || 'https://certisphere-eij8.onrender.com'}/?verify=${certificateId}`,
+          customConfig: effectiveConfig
         });
-        pdfBase64 = pdfBuffer.toString('base64');
-      } catch (pdfErr) {
-        console.error('Failed to generate PDF attachment:', pdfErr);
-      }
-      const { 
-        email, 
-        name, 
-        certificateId, 
-        role, 
-        verificationUrl,
-        recipientInstitution
-      } = recipient;
 
-      const orgName = recipientInstitution || institutionName || "Vignan's Foundation for Science, Technology & Research (VFSTR)";
-
-      const isMerit = Boolean(role && (
-        role.includes('Winner') || 
-        role.includes('Merit') || 
-        role.includes('1st') || 
-        role.includes('2nd') || 
-        role.includes('3rd') || 
-        role.includes('Place')
-      ));
-      const isSpeaker = Boolean(role && (role.includes('Speaker') || role.includes('Mentor')));
-      
-      const certTitle = isMerit 
-        ? `Certificate of Merit` 
-        : isSpeaker 
-          ? `Certificate of Appreciation` 
-          : `Certificate of Participation`;
-
-      const citationText = isMerit
-        ? `In recognition of outstanding performance, technical excellence, and securing <strong>${role}</strong> in <strong>"${eventTitle}"</strong> organized by ${orgName}.`
-        : `for active participation, dedication, and successful completion of all technical sessions in <strong>"${eventTitle}"</strong> conducted at ${orgName}.`;
-
-      const htmlBody = `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
-          
-          <div style="border-bottom: 2px solid #1e3a8a; padding-bottom: 14px; margin-bottom: 20px;">
-            <span style="font-size: 11px; font-weight: bold; color: #1e3a8a; letter-spacing: 1.5px; text-transform: uppercase;">${orgName}</span>
-            <h2 style="font-size: 19px; font-weight: bold; color: #0f172a; margin: 6px 0 0 0;">Official Institutional Credential Notification</h2>
-          </div>
-          
-          <p style="font-size: 14px; color: #334155; line-height: 1.6;">Dear <strong>${name}</strong>,</p>
-          
-          <p style="font-size: 14px; color: #334155; line-height: 1.6;">
-            We are pleased to issue your verified digital institutional credential for <strong>"${eventTitle}"</strong>.
-          </p>
-
-          <!-- Authentic Academic Parchment Certificate -->
-          <div style="background-color: #fffdfa; border: 3px double #b45309; border-radius: 6px; padding: 32px 24px; margin: 24px 0; color: #0f172a; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.06); outline: 4px solid #1e3a8a; outline-offset: -7px;">
-            
-            <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 18px;">
-              <div style="font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #1e3a8a; text-transform: uppercase;">
-                ${orgName}
-              </div>
-              <div style="font-size: 9px; color: #64748b; letter-spacing: 1px; margin-top: 3px;">
-                Deemed to be University · Accredited NAAC A+ · Institution of Excellence
-              </div>
-            </div>
-
-            <div style="font-size: 10px; letter-spacing: 3px; color: #b45309; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">
-              OFFICIAL ACADEMIC CREDENTIAL
-            </div>
-
-            <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 22px; font-weight: bold; color: #0f172a; letter-spacing: 1px; text-transform: uppercase;">
-              ${certTitle}
-            </div>
-
-            <div style="font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 13px; color: #64748b; margin: 16px 0 6px 0;">
-              This is proudly presented to
-            </div>
-
-            <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: bold; color: #1e3a8a; letter-spacing: 0.5px; border-bottom: 2px solid #b45309; display: inline-block; padding: 0 24px 4px 24px; margin-bottom: 14px;">
-              ${name}
-            </div>
-
-            <div style="font-size: 13px; color: #334155; line-height: 1.7; max-width: 480px; margin: 0 auto;">
-              ${citationText}
-            </div>
-
-            <!-- Signatures Table -->
-            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 26px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
-              <tr>
-                <td align="left" style="width: 35%; vertical-align: bottom;">
-                  <div style="font-family: 'Brush Script MT', cursive, Georgia, serif; font-size: 17px; color: #1e3a8a;">Dr. K.V. Krishna Kishore</div>
-                  <div style="border-top: 1px solid #94a3b8; width: 130px; margin-top: 4px; padding-top: 4px; font-size: 9px; font-weight: bold; color: #475569; text-transform: uppercase;">
-                    Dean of Academic Affairs
-                  </div>
-                </td>
-                <td align="center" style="width: 30%; vertical-align: middle;">
-                  <div style="display: inline-block; border: 2px solid #b45309; border-radius: 50%; padding: 8px; width: 56px; height: 56px; text-align: center; background-color: #fef3c7;">
-                    <div style="font-size: 8px; font-weight: bold; color: #92400e; text-transform: uppercase; margin-top: 10px; line-height: 1.1;">
-                      VFSTR<br/>SEAL
-                    </div>
-                  </div>
-                </td>
-                <td align="right" style="width: 35%; vertical-align: bottom;">
-                  <div style="font-family: 'Brush Script MT', cursive, Georgia, serif; font-size: 17px; color: #1e3a8a;">Dr. D. Venkatesulu</div>
-                  <div style="border-top: 1px solid #94a3b8; width: 130px; margin-top: 4px; padding-top: 4px; font-size: 9px; font-weight: bold; color: #475569; text-transform: uppercase; margin-left: auto;">
-                    Head of Department
-                  </div>
-                </td>
-              </tr>
-            </table>
-
-            <div style="margin-top: 20px; padding: 10px; background-color: #f1f5f9; border-radius: 6px; font-family: monospace; font-size: 11px; color: #475569;">
-              <strong>Certificate ID:</strong> ${certificateId} &nbsp;·&nbsp; <span style="color: #059669; font-weight: bold;">✔ Cryptographic SHA-256 Tamper-Proof</span>
-            </div>
-
-          </div>
-
-          <div style="text-align: center; margin: 24px 0 16px 0;">
-            <a href="${verificationUrl}" style="background-color: #1e3a8a; color: #ffffff; padding: 13px 28px; font-size: 14px; font-weight: 700; text-decoration: none; border-radius: 8px; display: inline-block; box-shadow: 0 4px 10px rgba(30, 58, 138, 0.25);">
-              📜 Open High-Res Certificate & Save PDF
-            </a>
-          </div>
-
-          <p style="font-size: 11px; color: #64748b; line-height: 1.5; text-align: center;">
-            Verification Portal Link: <br/>
-            <a href="${verificationUrl}" style="color: #4f46e5; word-break: break-all;">${verificationUrl}</a>
-          </p>
-
-          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px; font-size: 11px; color: #94a3b8; text-align: center;">
-            Issued by Dean of Academic Affairs & Institutional Activity Board<br/>
-            ${orgName}
-          </div>
-        </div>      `;
-
-      if (resendApiKey) {
-        try {
-          const resendRes = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${resendApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              from: process.env.RESEND_FROM || 'CertiSphere <onboarding@resend.dev>',
-              to: [email],
-              subject: `Official Certificate: ${eventTitle} — ${certificateId}`,
-              html: htmlBody,
-              attachments: pdfBase64 ? [
-                {
-                  filename: `${certificateId}.pdf`,
-                  content: pdfBase64
-                }
-              ] : undefined
-            }),
-          });
-          const resendData: any = await resendRes.json();
-          if (!resendRes.ok) {
-            throw new Error(resendData?.message || 'Resend API error');
-          }
-          dispatchResults.push({
-            email,
-            certificateId,
-            status: 'SENT',
-            messageId: resendData.id,
-          });
-        } catch (resendErr: any) {
-          console.error(`Resend API error for ${email}:`, resendErr.message);
-          dispatchResults.push({
-            email,
-            certificateId,
-            status: 'FAILED',
-            error: resendErr.message,
-          });
-        }
-      } else if (brevoApiKey) {
-        try {
-          const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
-            method: 'POST',
-            headers: {
-              'api-key': brevoApiKey,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              sender: { 
-                name: senderName || 'CertiSphere Registry', 
-                email: process.env.BREVO_SENDER || user || 'shimaferheenshaik@gmail.com' 
-              },
-              to: [{ email, name }],
-              subject: `Official Certificate: ${eventTitle} — ${certificateId}`,
-              htmlContent: htmlBody,
-            }),
-          });
-          const brevoData: any = await brevoRes.json();
-          if (!brevoRes.ok) {
-            throw new Error(brevoData?.message || 'Brevo API error');
-          }
-          dispatchResults.push({
-            email,
-            certificateId,
-            status: 'SENT',
-            messageId: brevoData.messageId,
-          });
-        } catch (brevoErr: any) {
-          console.error(`Brevo API error for ${email}:`, brevoErr.message);
-          dispatchResults.push({
-            email,
-            certificateId,
-            status: 'FAILED',
-            error: brevoErr.message,
-          });
-        }
-      } else if (transporter && hasRealSmtp) {
-        try {
-          const info = await transporter.sendMail({
-            from,
-            to: email,
-            subject: `Official Certificate: ${eventTitle} — ${certificateId}`,
-            html: htmlBody,
-            attachments: pdfBuffer ? [
-              {
-                filename: `${certificateId}.pdf`,
-                content: pdfBuffer,
-                contentType: 'application/pdf'
-              }
-            ] : undefined
-          });
-          dispatchResults.push({
-            email,
-            certificateId,
-            status: 'SENT',
-            messageId: info.messageId,
-          });
-        } catch (mailErr: any) {
-          console.error(`Failed to send real email to ${email}:`, mailErr.message);
-          dispatchResults.push({
-            email,
-            certificateId,
-            status: 'FAILED',
-            error: mailErr.message,
-          });
-        }
-      } else {
-        // Simulated verified dispatch when SMTP credentials are not yet saved by coordinator
         dispatchResults.push({
           email,
           certificateId,
-          status: 'SIMULATED_DELIVERED',
-          note: 'SMTP not configured in .env; email logged & verified in queue. Provide SMTP_USER & SMTP_PASS to send real mail.',
+          status: 'SENT',
+          messageId: result.messageId,
+          provider: result.provider
         });
+        sentCount++;
+
+        // Update database participant dispatch status if matching rollNo or certificateId
+        const allData = getAllData();
+        const matched = allData.participants.find(p => p.certificateId === certificateId || p.email.toLowerCase() === email.toLowerCase());
+        if (matched) {
+          updateParticipant(matched.id, { dispatchStatus: 'DELIVERED' });
+        }
+      } catch (err: any) {
+        console.error(`Failed to send to ${email}:`, err.message);
+        dispatchResults.push({
+          email,
+          certificateId,
+          status: 'FAILED',
+          error: err.message
+        });
+        failedCount++;
       }
     }
 
-    const sentCount = dispatchResults.filter(r => r.status === 'SENT' || r.status === 'SIMULATED_DELIVERED').length;
-
     return res.json({
       success: true,
-      hasRealSmtp: hasRealEmail,
+      hasRealSmtp: true,
       sentCount,
+      failedCount,
       total: recipients.length,
-      results: dispatchResults,
+      results: dispatchResults
     });
   } catch (error: any) {
     console.error('Error in email dispatch API:', error);
@@ -811,7 +1213,7 @@ app.post('/api/email/dispatch', async (req: Request, res: Response) => {
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'online',
-    service: 'CertiSphere AI Institutional Agent',
+    service: 'CertiSphere Institutional Registry & Agent Backend',
     timestamp: new Date().toISOString()
   });
 });

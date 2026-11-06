@@ -171,3 +171,29 @@ export interface InstitutionProfile {
   verificationBaseUrl: string;
   logoShield: 'apex' | 'crest' | 'shield';
 }
+
+
+export interface FacultyCoordinator {
+  id: string;
+  name: string;
+  email: string;
+  department: string;
+  facultyId?: string;
+  role: 'FACULTY_COORDINATOR' | 'DEAN_ADMIN';
+  createdAt: string;
+}
+
+export interface AuthSession {
+  token: string;
+  coordinator: FacultyCoordinator;
+}
+
+export interface EmailProviderConfig {
+  provider: 'brevo' | 'resend' | 'smtp';
+  senderEmail: string;
+  senderName: string;
+  hasApiKey?: boolean;
+  smtpHost?: string;
+  smtpPort?: number;
+  hasSmtpPass?: boolean;
+}
